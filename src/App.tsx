@@ -264,7 +264,50 @@ const App: React.FC = () => {
     isEditingRef.current = isGridEditing;
   }, [isGridEditing]);
 
-  // REAL-TIME SYNC POLLING
+  const refreshBaseData = useCallback((showLoading = false) => {
+    if (showLoading) setIsLoadingData(true);
+    return import('./services/supabaseService').then(async ({ getBaseMeshFlights, getFlights, getVehicles, getOperators }) => {
+       try {
+           const targetDate = currentMeshDate || getLocalTodayDateStr();
+           const [mesh, flights, vehicles, operators] = await Promise.all([
+               getBaseMeshFlights(targetDate),
+               getFlights(targetDate),
+               getVehicles(),
+               getOperators()
+           ]);
+           
+           if (mesh) {
+              setMeshFlightsByDate(prev => ({ ...prev, [targetDate]: mesh }));
+           }
+           
+           if (flights) {
+              setGlobalFlights(prev => {
+                const otherDates = prev.filter(f => f.date && f.date !== targetDate);
+                const merged = [...otherDates, ...flights];
+                return Array.from(new Map(merged.map(f => [f.id, f])).values());
+              });
+           }
+
+           if (vehicles && vehicles.length > 0) {
+              setGlobalVehicles(vehicles);
+           }
+
+           if (operators && operators.length > 0) {
+              const mappedOperators = operators.map(op => {
+                 const assignedVeh = vehicles?.find(v => v.operatorId === op.id);
+                 return { ...op, assignedVehicle: assignedVeh ? `${assignedVeh.type === 'CTA' ? 'CTA' : 'SRV'}-${assignedVeh.id}` : undefined };
+              });
+              setGlobalOperators(mappedOperators);
+           }
+       } catch (err) {
+           console.error("Error refreshing base data:", err);
+       } finally {
+           if (showLoading) setIsLoadingData(false);
+       }
+    });
+  }, [currentMeshDate]);
+
+  // REAL-TIME SYNC POLLING (Fallback)
   useEffect(() => {
     if (!user) return; // Only sync if authenticated
     
@@ -277,109 +320,54 @@ const App: React.FC = () => {
         return;
       }
       
-      import('./services/supabaseService').then(async ({ getFlights, getOperators, getVehicles }) => {
-        try {
-          const targetDate = currentMeshDate || getLocalTodayDateStr();
-          const [flights, operators, vehicles] = await Promise.all([
-             getFlights(targetDate),
-             getOperators(),
-             getVehicles()
-          ]);
-          
-          if (flights) {
-            setGlobalFlights(prev => {
-              const now = Date.now();
-              const isRecentAction = (now - lastManualActionRef.current) < 10000; // 10s window
-
-              // 1. Manter voos de outras datas intocados
-              const otherDatesFlights = prev.filter(f => f.date && f.date !== targetDate);
-              
-              // 2. Para a data sincronizada, mesclamos em vez de substituir
-              const dateLocal = prev.filter(f => f.date === targetDate || !f.date);
-              
-              // 3. Smart Merge para evitar sobrescrever ações locais
-              let mergedDate = flights.map(dbF => {
-                 const localF = dateLocal.find(lf => lf.id === dbF.id);
-                 // Se houve uma ação recente, preservamos os dados locais (como pit_id alterado antes de salvar no DB)
-                 if (localF && isRecentAction) {
-                     return { ...dbF, ...localF };
-                 }
-                 return dbF;
-              });
-              
-              // Adicionamos voos locais que ainda NÃO estão no banco
-              dateLocal.forEach(localF => {
-                 const existsInDB = mergedDate.some(dbF => dbF.id === localF.id);
-                 if (!existsInDB) {
-                    mergedDate.push(localF); 
-                 }
-              });
-
-              const finalDate = mergedDate;
-
-              const updatedGlobal = [...otherDatesFlights, ...finalDate];
-              const isDifferent = JSON.stringify(prev) !== JSON.stringify(updatedGlobal);
-              
-              if (isDifferent) {
-                return updatedGlobal;
-              }
-              return prev;
-            });
-          }
-          
-          if (operators && operators.length > 0) {
-            const mappedOperators = operators.map(op => {
-               const assignedVeh = vehicles?.find(v => v.operatorId === op.id);
-               return { ...op, assignedVehicle: assignedVeh ? `${assignedVeh.type === 'CTA' ? 'CTA' : 'SRV'}-${assignedVeh.id}` : undefined };
-            });
-            setGlobalOperators(prev => {
-              const isDifferent = JSON.stringify(prev) !== JSON.stringify(mappedOperators);
-              return isDifferent ? mappedOperators : prev;
-            });
-          }
-
-          if (vehicles && vehicles.length > 0) {
-            setGlobalVehicles(prev => {
-              const isDifferent = JSON.stringify(prev) !== JSON.stringify(vehicles);
-              return isDifferent ? vehicles : prev;
-            });
-          }
-        } catch (e) {
-          console.error("Auto-sync failed:", e);
-        }
-      });
+      refreshBaseData();
     }, 10000); // 10 seconds auto-refresh Real-Time
     
     return () => clearInterval(syncInterval);
-  }, [user, currentMeshDate]);
+  }, [user, refreshBaseData]);
 
+  // AUTO-REFRESH ON VALUE CHANGES
   useEffect(() => {
     if (!user) return;
-    setIsLoadingData(true);
-    import('./services/supabaseService').then(async ({ getBaseMeshFlights, getFlights }) => {
-       try {
-           const [mesh, flights] = await Promise.all([
-               getBaseMeshFlights(currentMeshDate),
-               getFlights(currentMeshDate)
-           ]);
-           
-           if (mesh && mesh.length > 0) {
-              setMeshFlightsByDate(prev => ({ ...prev, [currentMeshDate]: mesh }));
-           } else {
-              setMeshFlightsByDate(prev => ({ ...prev, [currentMeshDate]: [] }));
+    refreshBaseData(true);
+  }, [currentMeshDate, view, user, refreshBaseData]);
+
+  // REAL-TIME SYNC VIA SUPABASE CHANNELS (Instant alert & data sync)
+  useEffect(() => {
+    if (!user) return;
+    
+    let activeChannel: any = null;
+    
+    import('./lib/supabase').then(({ supabase, isSupabaseConfigured }) => {
+      if (!isSupabaseConfigured()) return;
+      
+      activeChannel = supabase
+        .channel('db-global-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'malha_operacional' }, () => {
+           if (!isEditingRef.current) {
+              refreshBaseData();
            }
-           
-           setGlobalFlights(prev => {
-               const otherDates = prev.filter(f => f.date && f.date !== currentMeshDate);
-               return [...otherDates, ...(flights || [])];
-           });
-       } catch (err) {
-           console.error("Error fetching data for date: " + currentMeshDate, err);
-       } finally {
-           setIsLoadingData(false);
-       }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'malha_dia' }, () => {
+           if (!isEditingRef.current) {
+              refreshBaseData();
+           }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'frotas' }, () => {
+           refreshBaseData();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'operadores_geral' }, () => {
+           refreshBaseData();
+        })
+        .subscribe();
     });
-  }, [currentMeshDate, view, user]);
+
+    return () => {
+      if (activeChannel) {
+        activeChannel.unsubscribe();
+      }
+    };
+  }, [user, refreshBaseData]);
 
   const meshFlights = meshFlightsByDate[currentMeshDate] || [];
   

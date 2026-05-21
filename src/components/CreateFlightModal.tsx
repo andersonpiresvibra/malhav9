@@ -6,7 +6,7 @@ import { generateUUID } from '../utils/uuid';
 import { useTheme } from '../contexts/ThemeContext';
 import { TimeConflictModal } from './TimeConflictModal';
 import { supabase } from '../lib/supabase';
-import { getDestinos } from '../services/supabaseService';
+import { getDestinos, getAircrafts } from '../services/supabaseService';
 
 const GOL_PREFIXOS = [
   "PR-GEA", "PR-GEC", "PR-GED", "PR-GEH", "PR-GEI", "PR-GEJ", "PR-GEK", "PR-GEQ", "PR-GIH", "PR-GOQ", "PR-GOR", "PR-VBQ",
@@ -49,8 +49,8 @@ export const CreateFlightModal: React.FC<CreateFlightModalProps> = ({ onClose, o
 
   useEffect(() => {
     // Fetch aircrafts from DB for auto-complete magic
-    supabase.from('aeronaves').select('*').then(res => {
-      if (res.data) setAircraftsDB(res.data as AircraftType[]);
+    getAircrafts().then(aircrafts => {
+      setAircraftsDB(aircrafts);
     });
     getDestinos().then(destinos => {
       setDestinosDB(destinos as StaticFlight[]);

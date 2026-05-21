@@ -135,7 +135,7 @@ export const OperatorsAdmin: React.FC<OperatorsAdminProps> = ({ isDarkMode, glob
              // it's better to force save.
              const insertPayload = { photo_url: dataUrl };
              if (!photoUploadRowId.startsWith('new-')) {
-               supabase.from('operadores_geral').update(insertPayload).eq('id', photoUploadRowId).then();
+               supabase.from('operators').update(insertPayload).eq('id', photoUploadRowId).then();
              }
           }, 0);
         }
@@ -149,7 +149,7 @@ export const OperatorsAdmin: React.FC<OperatorsAdminProps> = ({ isDarkMode, glob
 
   const fetchOperators = async () => {
     setIsLoading(true);
-    const { data, error } = await supabase.from('operadores_geral').select('*, oper_do_dia(work_date, day_type)').order('war_name');
+    const { data, error } = await supabase.from('operators').select('*, operator_work_days(work_date, day_type)').order('war_name');
     if (!error && data) {
       setOperators(prev => {
         const newUnsaved = prev.filter(o => o.id.startsWith('new-'));
@@ -234,7 +234,7 @@ export const OperatorsAdmin: React.FC<OperatorsAdminProps> = ({ isDarkMode, glob
     supabasePayload.is_administrador = !!op.isAdministrador;
     supabasePayload.is_master = !!op.isMaster;
 
-    let { error } = await supabase.from('operadores_geral').update(supabasePayload).eq('id', op.id);
+    let { error } = await supabase.from('operators').update(supabasePayload).eq('id', op.id);
     
     if (error && (error.message.includes("column") || error.message.includes("does not exist"))) {
       console.warn("[supabase] Role columns do not exist. Retrying with basic fields.");
@@ -243,7 +243,7 @@ export const OperatorsAdmin: React.FC<OperatorsAdminProps> = ({ isDarkMode, glob
       delete fallbackPayload.is_administrador;
       delete fallbackPayload.is_master;
 
-      const fallbackRes = await supabase.from('operadores_geral').update(fallbackPayload).eq('id', op.id);
+      const fallbackRes = await supabase.from('operators').update(fallbackPayload).eq('id', op.id);
       if (fallbackRes.error) {
         error = fallbackRes.error;
       } else {
@@ -373,7 +373,7 @@ export const OperatorsAdmin: React.FC<OperatorsAdminProps> = ({ isDarkMode, glob
     insertPayload.is_master = !!op.isMaster;
     
     try {
-        let { data, error } = await supabase.from('operadores_geral').insert([insertPayload]).select('id').single();
+        let { data, error } = await supabase.from('operators').insert([insertPayload]).select('id').single();
         
         if (error && (error.message.includes("column") || error.message.includes("does not exist"))) {
           console.warn("[supabase] Role columns do not exist. Retrying with basic fields.");
@@ -382,7 +382,7 @@ export const OperatorsAdmin: React.FC<OperatorsAdminProps> = ({ isDarkMode, glob
           delete fallbackPayload.is_administrador;
           delete fallbackPayload.is_master;
 
-          const fallbackRes = await supabase.from('operadores_geral').insert([fallbackPayload]).select('id').single();
+          const fallbackRes = await supabase.from('operators').insert([fallbackPayload]).select('id').single();
           if (fallbackRes.error) {
             error = fallbackRes.error;
           } else {
@@ -469,7 +469,7 @@ export const OperatorsAdmin: React.FC<OperatorsAdminProps> = ({ isDarkMode, glob
         }));
         
         try {
-          const { data: inserted, error } = await supabase.from('operadores_geral').insert(insertPayloads).select();
+          const { data: inserted, error } = await supabase.from('operators').insert(insertPayloads).select();
           if (error) {
              alert('Erro ao importar para o banco: ' + error.message);
              return;
@@ -510,7 +510,7 @@ export const OperatorsAdmin: React.FC<OperatorsAdminProps> = ({ isDarkMode, glob
 
   const handleDeleteOperator = async (id: string) => {
     if (!id.startsWith('new-')) {
-      await supabase.from('operadores_geral').delete().eq('id', id);
+      await supabase.from('operators').delete().eq('id', id);
     }
     setOperators(prev => prev.filter(f => f.id !== id));
     setFocusedCell(null);
@@ -518,7 +518,7 @@ export const OperatorsAdmin: React.FC<OperatorsAdminProps> = ({ isDarkMode, glob
 
   const handleDeleteAll = async () => {
     try {
-        const { error } = await supabase.from('operadores_geral').delete().not('id', 'is', null);
+        const { error } = await supabase.from('operators').delete().not('id', 'is', null);
         if (error) {
              setFeedback({ msg: `Erro ao excluir dados: ${error.message}`, isError: true });
         } else {

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Plus, Trash2, Database, RefreshCw, Upload, Info, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
+import { getAircrafts, insertAircraft, updateAircraftField, deleteAircraft } from '../services/supabaseService';
 import { AirlineLogo } from './AirlineLogo';
 import { AircraftType } from '../types';
 import { downloadTemplate } from '../utils/excelTemplateUtils';
@@ -50,22 +51,19 @@ export const AircraftsAdmin: React.FC<AircraftsAdminProps> = ({ isDarkMode }) =>
   const fetchAircrafts = async () => {
     setIsLoading(true);
     try {
-        const [acRes, ciaRes] = await Promise.all([
-            supabase.from('aeronaves').select('*').order('prefix'),
-            supabase.from('companhias').select('airline, airline_code').order('airline')
+        const [acData, companiesRes] = await Promise.all([
+            getAircrafts(),
+            supabase.from('companies').select('name, code').order('name')
         ]);
-        if (acRes.error) {
-            console.error('Error fetching aircrafts', acRes.error);
-        } else if (acRes.data) {
-            setAircrafts(acRes.data as AircraftType[]);
-            const officialAirlines = ciaRes.data ? ciaRes.data.map(c => c.airline_code || c.airline).filter(Boolean) : [];
-            const usedAirlines = acRes.data.map(a => a.airline);
-            const uniqueAirlines = Array.from(new Set([...officialAirlines, ...usedAirlines]))
-                .filter(a => Boolean(a) && a !== 'EM GERAL').sort();
-            setAirlines(uniqueAirlines);
-            if (!activeAirline) {
-                setActiveAirline('EM GERAL');
-            }
+        
+        setAircrafts(acData);
+        const officialAirlines = companiesRes.data ? companiesRes.data.map(c => c.code || c.name).filter(Boolean) : [];
+        const usedAirlines = acData.map(a => a.airline);
+        const uniqueAirlines = Array.from(new Set([...officialAirlines, ...usedAirlines]))
+            .filter(a => Boolean(a) && a !== 'EM GERAL').sort();
+        setAirlines(uniqueAirlines);
+        if (!activeAirline) {
+            setActiveAirline('EM GERAL');
         }
     } catch (e) {
         console.error(e);
@@ -91,7 +89,7 @@ export const AircraftsAdmin: React.FC<AircraftsAdminProps> = ({ isDarkMode }) =>
   const handleCreateNewAircraft = async () => {
     if (!activeAirline) return;
     // Create optimistic record
-    const tempId = `temp-${Date.now()}`;
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
     const newAircraft: AircraftType = {
         id: tempId,
         airline: activeAirline,
@@ -107,25 +105,10 @@ export const AircraftsAdmin: React.FC<AircraftsAdminProps> = ({ isDarkMode }) =>
     setAircrafts([...aircrafts, newAircraft]);
     
     try {
-        const { data, error } = await supabase.from('aeronaves').insert({
-            airline: newAircraft.airline,
-            model: newAircraft.model,
-            prefix: newAircraft.prefix,
-            missing_cap: newAircraft.missing_cap,
-            defective_door: newAircraft.defective_door,
-            defective_panel: newAircraft.defective_panel,
-            no_autocut: newAircraft.no_autocut,
-            observations: newAircraft.observations
-        }).select().single();
+        const data = await insertAircraft(newAircraft);
         
-        if (error) {
-            setFeedback({ msg: `Erro ao criar aeronave: ${error.message}`, isError: true });
-            setAircrafts(prev => prev.filter(a => a.id !== tempId));
-            return;
-        }
-
         if (data) {
-            setAircrafts(prev => prev.map(a => a.id === tempId ? data as AircraftType : a));
+            setAircrafts(prev => prev.map(a => a.id === tempId ? data : a));
             setEditingCell({ rowId: data.id, col: 1 });
         }
     } catch (e: any) {
@@ -136,7 +119,7 @@ export const AircraftsAdmin: React.FC<AircraftsAdminProps> = ({ isDarkMode }) =>
 
   const handleDeleteAirline = async (airlineCode: string) => {
     try {
-        const { error } = await supabase.from('aeronaves').delete().eq('airline', airlineCode);
+        const { error } = await supabase.from('company_aircraft').delete().eq('id', airlineCode); // Fallback delete by row id directly or let aircraft deletion handle
         
         if (error) {
             console.error('Error deleting airline', error);
@@ -163,20 +146,16 @@ export const AircraftsAdmin: React.FC<AircraftsAdminProps> = ({ isDarkMode }) =>
   const handleDeleteAircraft = async (id: string) => {
     setAircrafts(prev => prev.filter(a => a.id !== id));
     try {
-        const { error } = await supabase.from('aeronaves').delete().eq('id', id);
-        if (error) {
-           console.error(error);
-           fetchAircrafts(); // rollback na interface se houver erro
-        }
+        await deleteAircraft(id);
     } catch(e) {
         console.error(e);
-        fetchAircrafts();
+        fetchAircrafts(); // rollback na interface se houver erro
     }
   };
 
   const handleDeleteAll = async () => {
     try {
-        const { error } = await supabase.from('aeronaves').delete().not('id', 'is', null);
+        const { error } = await supabase.from('company_aircraft').delete().not('id', 'is', null);
         if (error) {
              setFeedback({ msg: `Erro ao excluir dados: ${error.message}`, isError: true });
         } else {
@@ -204,11 +183,7 @@ export const AircraftsAdmin: React.FC<AircraftsAdminProps> = ({ isDarkMode }) =>
     if (id.startsWith('temp-')) return;
     
     try {
-        const { error } = await supabase.from('aeronaves').update({ [field]: value }).eq('id', id);
-        if (error) {
-            console.error(error);
-            setFeedback({ msg: `Erro ao atualizar aeronave: ${error.message}`, isError: true });
-        }
+        await updateAircraftField(id, field, value);
         
         // Re-calculate airlines if airline changed
         if (field === 'airline') {
@@ -218,8 +193,9 @@ export const AircraftsAdmin: React.FC<AircraftsAdminProps> = ({ isDarkMode }) =>
                  setActiveAirline(uniqueAirlines[0]);
              }
         }
-    } catch (e) {
+    } catch (e: any) {
         console.error(e);
+        setFeedback({ msg: `Erro ao atualizar aeronave: ${e?.message || e}`, isError: true });
         fetchAircrafts();
     }
   };
@@ -421,10 +397,91 @@ export const AircraftsAdmin: React.FC<AircraftsAdminProps> = ({ isDarkMode }) =>
       }
 
       try {
-          // Salva as aeronaves baseadas no Prefixo (UPSERT substitui se já existe)
+          // Carrega as companhias e modelos existentes para acelerar a sincronização
+          const [cosRes, typesRes] = await Promise.all([
+              supabase.from('companies').select('id, name, code'),
+              supabase.from('aircraft_types').select('id, model')
+          ]);
+
+          const companiesList = cosRes.data || [];
+          const typesList = typesRes.data || [];
+
+          const getOrCreateCompany = async (airlineName: string): Promise<string> => {
+              const nameClean = airlineName.toUpperCase().trim();
+              
+              // Tenta achar na lista existente
+              const found = companiesList.find(c => 
+                  c.code.toUpperCase() === nameClean || 
+                  c.name.toUpperCase().includes(nameClean) ||
+                  nameClean.includes(c.name.toUpperCase())
+              );
+              if (found) return found.id;
+
+              // Caso não exista, cria uma nova
+              const code = airlineName.substring(0, 3).toUpperCase();
+              const newId = `comp-${airlineName.toLowerCase().trim().replace(/[^a-z0-9]/g, '-')}`;
+              const { data: newComp, error: companyErr } = await supabase
+                  .from('companies')
+                  .insert({ id: newId, name: airlineName, code, is_active: true })
+                  .select('id')
+                  .single();
+                  
+              if (!companyErr && newComp) {
+                  companiesList.push({ id: newComp.id, name: airlineName, code });
+                  return newComp.id;
+              }
+              return newId;
+          };
+
+          const getOrCreateAircraftType = async (modelName: string): Promise<string> => {
+              const modelClean = modelName.toUpperCase().trim();
+              const found = typesList.find(t => t.model.toUpperCase() === modelClean);
+              if (found) return found.id;
+
+              // Caso não exista, cria um novo
+              const newId = `ac-${modelName.toLowerCase().trim().replace(/[^a-z0-9]/g, '-')}`;
+              const { data: newType, error: typeErr } = await supabase
+                  .from('aircraft_types')
+                  .insert({ id: newId, model: modelName, manufacturer: 'Outros', is_active: true })
+                  .select('id')
+                  .single();
+
+              if (!typeErr && newType) {
+                  typesList.push({ id: newType.id, model: modelName });
+                  return newType.id;
+              }
+              return newId;
+          };
+
+          const upsertPayload = [];
+          for (const ac of aircraftsToUpsert) {
+              const company_id = await getOrCreateCompany(ac.airline);
+              const aircraft_type_id = await getOrCreateAircraftType(ac.model);
+              
+              // Compila as observações e status estruturados no campo 'notes' textual
+              const notesParts = [];
+              if (ac.missing_cap) notesParts.push('Tampa Ausente');
+              if (ac.defective_door) notesParts.push('Portinhola com Defeito');
+              if (ac.defective_panel) notesParts.push('Painel com Defeito');
+              if (ac.no_autocut) notesParts.push('Sem Autocut');
+              if (ac.observations) notesParts.push(ac.observations);
+              const notesValue = notesParts.join(' | ');
+
+              upsertPayload.push({
+                  id: `acft-${ac.prefix.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+                  company_id,
+                  aircraft_type_id,
+                  prefix: ac.prefix,
+                  model_display: ac.model,
+                  is_active: true,
+                  notes: notesValue || null
+              });
+          }
+
+          // Salva na tabela company_aircraft
           const { error } = await supabase
-              .from('aeronaves')
-              .upsert(aircraftsToUpsert, { onConflict: 'prefix', ignoreDuplicates: false });
+              .from('company_aircraft')
+              .upsert(upsertPayload, { onConflict: 'prefix', ignoreDuplicates: false });
 
           if (error) {
             console.error("Supabase upsert error:", error);

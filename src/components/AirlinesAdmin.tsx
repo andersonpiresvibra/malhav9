@@ -72,40 +72,46 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
   const fetchAirlines = async () => {
     setIsLoading(true);
     try {
-        const { data: airlinesData, error } = await supabase.from('companhias').select('*').order('airline');
+        const { data: airlinesData, error } = await supabase.from('companies').select('*').order('name');
         if (error) {
             console.error('Error fetching airlines', error);
             return;
         }
 
-        // Fetch counts from aeronaves and malha_raiz
-        const { data: aeronaves } = await supabase.from('aeronaves').select('airline');
-        const { data: malha } = await supabase.from('malha_raiz').select('flight_number, airline_code');
+        // Fetch counts from aircrafts
+        const { data: aeronaves } = await supabase.from('company_aircraft').select('prefix, company_id');
+        const { data: malha } = await supabase.from('root_mesh_flights').select('id, company_id');
 
         const equipCounts: Record<string, number> = {};
         const flightCounts: Record<string, number> = {};
 
         if (aeronaves) {
             aeronaves.forEach(a => {
-                if (a.airline) {
-                    equipCounts[a.airline] = (equipCounts[a.airline] || 0) + 1;
+                if (a.company_id) {
+                    equipCounts[a.company_id] = (equipCounts[a.company_id] || 0) + 1;
                 }
             });
         }
 
         if (malha) {
             malha.forEach(m => {
-                const cia = m.airline_code || (m.flight_number ? m.flight_number.match(/^[A-Z]{2,3}/)?.[0] : null);
-                if (cia) {
-                    flightCounts[cia] = (flightCounts[cia] || 0) + 1;
+                if (m.company_id) {
+                    flightCounts[m.company_id] = (flightCounts[m.company_id] || 0) + 1;
                 }
             });
         }
 
-        const enrichedAirlines = (airlinesData as AirlineType[]).map(a => ({
-            ...a,
-            equipment_count: equipCounts[a.airline_code] || equipCounts[a.airline] || 0, // Fallback check
-            flight_count: flightCounts[a.airline_code] || 0
+        const enrichedAirlines = (airlinesData || []).map((a: any) => ({
+            id: a.id,
+            logo_url: a.logo_url || getLogoUrl(a.code),
+            legal_name: a.name || '',
+            airline: a.name || '',
+            airline_code: a.code || '',
+            country: 'Brasil',
+            category: 'GERAL',
+            is_active: true,
+            equipment_count: equipCounts[a.id] || 0,
+            flight_count: flightCounts[a.id] || 0
         }));
 
         setAirlines(enrichedAirlines);
@@ -122,20 +128,26 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
 
   const handleCreateNewAirline = async () => {
     try {
-        const payload: Omit<AirlineType, 'id'> = {
-            legal_name: '',
-            airline: '',
-            airline_code: '',
-            country: '',
-            is_active: true,
-            category: activeTab === 'GERAL' ? 'NACIONAL' : activeTab,
+        const payload = {
+            name: 'Nova Companhia',
+            code: 'N' + Math.floor(Math.random() * 90 + 10)
         };
 
-        const { data, error } = await supabase.from('companhias').insert(payload).select().single();
+        const { data, error } = await supabase.from('companies').insert(payload).select().single();
         if (error) {
             setFeedback({ msg: `Erro ao criar companhia: ${error.message}`, isError: true });
         } else if (data) {
-            setAirlines(prev => [...prev, { ...data, equipment_count: 0, flight_count: 0 } as any]);
+            const mapped: AirlineType = {
+                id: data.id,
+                logo_url: data.logo_url || getLogoUrl(data.code),
+                legal_name: data.name || '',
+                airline: data.name || '',
+                airline_code: data.code || '',
+                country: 'Brasil',
+                category: 'GERAL',
+                is_active: true
+            };
+            setAirlines(prev => [...prev, { ...mapped, equipment_count: 0, flight_count: 0 } as any]);
         }
     } catch (e: any) {
         setFeedback({ msg: `Exceção ao criar companhia: ${e.message}`, isError: true });
@@ -144,7 +156,7 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
 
   const handleDeleteAirline = async (id: string) => {
     try {
-        const { error } = await supabase.from('companhias').delete().eq('id', id);
+        const { error } = await supabase.from('companies').delete().eq('id', id);
         if (error) {
              setFeedback({ msg: `Erro ao excluir companhia: ${error.message}`, isError: true });
         } else {
@@ -158,7 +170,7 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
 
   const handleDeleteAll = async () => {
     try {
-        const { error } = await supabase.from('companhias').delete().not('id', 'is', null);
+        const { error } = await supabase.from('companies').delete().not('id', 'is', null);
         if (error) {
              setFeedback({ msg: `Erro ao excluir dados: ${error.message}`, isError: true });
         } else {
@@ -172,21 +184,35 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
   };
 
   const handleUpdateField = async (id: string, field: keyof AirlineType, value: any) => {
-    let updatePayload: any = { [field]: value };
-    
-    // Auto-update category if country changes
-    if (field === 'country') {
-        const upperCountry = String(value || '').toUpperCase();
-        if (upperCountry === 'BRASIL' || upperCountry === 'BR' || upperCountry === 'BRAZIL') {
-            updatePayload.category = 'NACIONAL';
-        } else if (value) {
-            updatePayload.category = 'INTERNACIONAL';
-        }
+    let internalFieldMapping: any = {};
+    if (field === 'airline' || field === 'legal_name') {
+        internalFieldMapping.name = value;
+    } else if (field === 'airline_code') {
+        internalFieldMapping.code = value;
+    } else if (field === 'logo_url') {
+        internalFieldMapping.logo_url = value;
     }
 
-    setAirlines(prev => prev.map(c => c.id === id ? { ...c, ...updatePayload } : c));
+    setAirlines(prev => prev.map(c => {
+        if (c.id === id) {
+            const updateObj: any = { ...c };
+            if (field === 'airline' || field === 'legal_name') {
+                updateObj.airline = value;
+                updateObj.legal_name = value;
+            } else if (field === 'airline_code') {
+                updateObj.airline_code = value;
+            } else {
+                updateObj[field] = value;
+            }
+            return updateObj;
+        }
+        return c;
+    }));
+
+    if (Object.keys(internalFieldMapping).length === 0) return;
+
     try {
-        const { error } = await supabase.from('companhias').update(updatePayload).eq('id', id);
+        const { error } = await supabase.from('companies').update(internalFieldMapping).eq('id', id);
         if (error) {
             setFeedback({ msg: `Erro ao atualizar companhia: ${error.message}`, isError: true });
             fetchAirlines(); // Revert
@@ -287,12 +313,8 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
             }
 
             airlinesToUpsert.push({
-                legal_name: legalNameStr,
-                airline: airlineStr || codeStr,
-                airline_code: codeStr,
-                country: countryStr,
-                is_active: true,
-                category: categoryToUse,
+                name: airlineStr || codeStr,
+                code: codeStr,
             });
         }
 
@@ -301,8 +323,8 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
         }
 
         const { error } = await supabase
-            .from('companhias')
-            .upsert(airlinesToUpsert, { onConflict: 'airline_code', ignoreDuplicates: false });
+            .from('companies')
+            .upsert(airlinesToUpsert, { onConflict: 'code', ignoreDuplicates: false });
 
         if (error) {
             throw error;

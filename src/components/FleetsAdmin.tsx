@@ -72,15 +72,15 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
 
   const fetchFleets = async () => {
     setIsLoading(true);
-    const { data, error } = await supabase.from('frotas').select('*, operadores_geral(war_name)').order('fleet_number');
+    const { data, error } = await supabase.from('vehicles').select('*, operators(war_name)').order('id');
     if (!error && data) {
       setFleets(prev => {
         const newUnsaved = prev.filter(f => f.id.startsWith('new-'));
         const fetched = data.map((v: any) => ({
           id: v.id,
-          fleetNumber: v.fleet_number || '',
+          fleetNumber: v.id || '',
           type: v.type || 'SERVIDOR',
-          operado: v.operadores_geral?.war_name || '--',
+          operado: v.operators?.war_name || '--',
           manufacturer: v.manufacturer || '',
           status: v.status || 'INATIVO',
           maxFlowRate: v.max_flow_rate || 0,
@@ -103,7 +103,7 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
 
     const subscription = supabase
       .channel('frotas-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'frotas' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, () => {
         fetchFleets();
       })
       .subscribe();
@@ -137,7 +137,7 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
     if (!v) return;
 
     const supabasePayload: any = {};
-    if (colKey === 'fleetNumber') supabasePayload.fleet_number = v.fleetNumber;
+    if (colKey === 'fleetNumber') supabasePayload.id = v.fleetNumber;
     if (colKey === 'type') supabasePayload.type = v.type;
     if (colKey === 'manufacturer') supabasePayload.manufacturer = v.manufacturer;
     if (colKey === 'status') supabasePayload.status = v.status;
@@ -151,7 +151,7 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
       if (rowId.startsWith('new-')) {
           if (v.fleetNumber && !v.id.startsWith('saved-')) {
               const insertPayload = {
-                  fleet_number: v.fleetNumber || 'Novo Frota',
+                  id: v.fleetNumber || 'Novo Frota',
                   type: v.type || 'SERVIDOR',
                   manufacturer: v.manufacturer || null,
                   status: v.status || 'INATIVO',
@@ -161,7 +161,7 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
                   plate: v.plate || null,
                   atve: v.atve || null
               };
-              const { data, error } = await supabase.from('frotas').insert([insertPayload]).select('id').single();
+              const { data, error } = await supabase.from('vehicles').insert([insertPayload]).select('id').single();
               if (error) console.error('Error inserting vehicle:', error);
               if (!error && data) {
                   lastStableRef.current = lastStableRef.current.map(f => f.id === rowId ? { ...f, id: data.id } : f);
@@ -169,7 +169,7 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
               }
           }
       } else {
-        const { error } = await supabase.from('frotas').update(supabasePayload).eq('id', rowId);
+        const { error } = await supabase.from('vehicles').update(supabasePayload).eq('id', rowId);
         if (error) console.error('Error updating vehicle:', error);
       }
     }
@@ -202,14 +202,14 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
 
   const handleAddFleet = async () => {
     const insertPayload = {
-        fleet_number: 'NOVO' + Math.floor(Math.random() * 1000),
+        id: 'NOVO' + Math.floor(Math.random() * 1000),
         type: 'SERVIDOR',
         status: 'INATIVO',
         has_platform: false
     };
     
     try {
-        const { data, error } = await supabase.from('frotas').insert([insertPayload]).select().single();
+        const { data, error } = await supabase.from('vehicles').insert([insertPayload]).select().single();
         if (error) {
             alert('Erro ao criar frota: ' + error.message);
             return;
@@ -227,7 +227,7 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
 
   const handleDeleteFleet = async (id: string) => {
     if (!id.startsWith('new-')) {
-      await supabase.from('frotas').delete().eq('id', id);
+      await supabase.from('vehicles').delete().eq('id', id);
     }
     setFleets(prev => prev.filter(f => f.id !== id));
     setFocusedCell(null);
@@ -235,7 +235,7 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
 
   const handleDeleteAll = async () => {
     try {
-        const { error } = await supabase.from('frotas').delete().not('id', 'is', null);
+        const { error } = await supabase.from('vehicles').delete().not('id', 'is', null);
         if (error) {
              setFeedback({ msg: `Erro ao excluir dados: ${error.message}`, isError: true });
         } else {

@@ -74,7 +74,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // 1. Tenta buscar por e-mail primeiro (utilizadores reais autenticados)
           if (email) {
             const { data: rawData, error } = await supabase
-              .from('operadores_geral')
+              .from('operators')
               .select('is_usuario, is_administrador, is_master, is_lt')
               .ilike('email', email)
               .maybeSingle();
@@ -94,7 +94,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // 2. Se não encontrar ou não tiver e-mail, tenta buscar por war_name (compatibilidade/usuarios virtuais)
           if (name) {
             const { data: rawData, error } = await supabase
-              .from('operadores_geral')
+              .from('operators')
               .select('is_usuario, is_administrador, is_master, is_lt')
               .ilike('war_name', name)
               .maybeSingle();
@@ -133,7 +133,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginWithWarName = async (name: string) => {
     try {
       const { data, error } = await supabase
-        .from('operadores_geral')
+        .from('operators')
         .select('*')
         .ilike('war_name', name)
         .limit(1)

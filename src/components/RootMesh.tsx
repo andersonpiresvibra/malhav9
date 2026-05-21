@@ -5,7 +5,7 @@ import { FlightData, FlightStatus, AircraftType, MeshFlight, StaticFlight } from
 import { getCurrentShift, getLocalDateStr } from '../utils/shiftUtils';
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
-import { getBaseMeshFlights, upsertBaseMeshFlights, upsertRootMesh, clearRootMesh, deleteRootMeshFlight, getDestinos } from '../services/supabaseService';
+import { getBaseMeshFlights, upsertBaseMeshFlights, upsertRootMesh, clearRootMesh, deleteRootMeshFlight, getDestinos, getAircrafts } from '../services/supabaseService';
 import { ConfirmActionModal } from './modals/ConfirmActionModal';
 import { AlertModal } from './modals/AlertModal';
 import { generateUUID } from '../utils/uuid';
@@ -198,8 +198,8 @@ export const RootMesh: React.FC<RootMeshProps> = ({
   const [destinosDB, setDestinosDB] = useState<StaticFlight[]>([]);
 
   useEffect(() => {
-    supabase.from('aeronaves').select('*').then(res => {
-        if (res.data) setAircraftsDB(res.data);
+    getAircrafts().then(aircrafts => {
+        setAircraftsDB(aircrafts);
     });
     getDestinos().then(destinos => {
       setDestinosDB(destinos as StaticFlight[]);
@@ -1284,9 +1284,9 @@ export const RootMesh: React.FC<RootMeshProps> = ({
                     );
                 
                 return (
-                  <React.Fragment key={flight.id}>
+                  <React.Fragment key={flight.id || `frag-${rIdx}`}>
                     <tr 
-                      key={flight.id}
+                      key={flight.id || `row-${rIdx}`}
                       data-row={rIdx}
                       onContextMenu={(e) => {
                         e.preventDefault();
@@ -1313,7 +1313,7 @@ export const RootMesh: React.FC<RootMeshProps> = ({
                         if (col.key === 'actions') {
                           return (
                             <td 
-                              key={`${flight.id}-actions`}
+                              key={`${flight.id || rIdx}-actions`}
                               className={`p-0 relative h-10 text-center pointer-events-auto actions-container border-r border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}
                             >
                               <div className="flex items-center justify-center w-full h-full gap-1">
@@ -1383,7 +1383,7 @@ export const RootMesh: React.FC<RootMeshProps> = ({
 
                         return (
                           <td 
-                            key={`${flight.id}-${col.key}`} 
+                            key={`${flight.id || rIdx}-${col.key}`}
                             data-col={cIdx}
                             onClick={(e) => {
                               if (flight.disabled) return;

@@ -1765,7 +1765,7 @@ export const GridOps: React.FC<GridOpsProps> = ({
       };
       return (
         <td
-          key={`${row.id}-${colKey}`}
+          key={`${row.id || rowIndex}-${colKey}`}
           data-rowid={row.id}
           data-colkey={colKey as string}
           className={`p-0 border-y border-l transition-all relative h-10 outline-none
@@ -4009,7 +4009,7 @@ export const GridOps: React.FC<GridOpsProps> = ({
 
                 return (
                   <tr
-                    key={row.id}
+                    key={row.id || `${row.flightNumber}-${rowIndex}`}
                     data-rowindex={rowIndex}
                     onClickCapture={(e) => {
                       const target = e.target as HTMLElement;

@@ -50,15 +50,15 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
     setIsLoading(true);
     try {
         const data = await getRootMesh();
-        const { data: companies } = await supabase.from('companhias').select('airline, airline_code');
+        const { data: companies } = await supabase.from('companies').select('name, code');
         
         let officialAirlines: string[] = [];
         if (companies) {
             const mapping: Record<string, string> = {};
-            companies.forEach(c => {
-                if (c.airline_code) {
-                    mapping[c.airline_code.toUpperCase()] = c.airline.toUpperCase();
-                    officialAirlines.push(c.airline_code.toUpperCase());
+            companies.forEach((c: any) => {
+                if (c.code) {
+                    mapping[c.code.toUpperCase()] = c.name.toUpperCase();
+                    officialAirlines.push(c.code.toUpperCase());
                 }
             });
             setCompanyNames(mapping);
@@ -103,7 +103,7 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
 
   const handleCreateNewFlight = async () => {
     if (!activeAirline) return;
-    const tempId = `temp-${Date.now()}`;
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
     const newFlight: any = {
         id: tempId,
         airline: activeAirline,
@@ -184,18 +184,14 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
 
   const handleDeleteAll = async () => {
     try {
-        const { error } = await supabase.from('malha_raiz').delete().not('id', 'is', null);
-        if (error) {
-             setFeedback({ msg: `Erro ao excluir dados: ${error.message}`, isError: true });
-        } else {
-             setFlights([]);
-             setAirlines([]);
-             setActiveAirline('EM GERAL');
-             setConfirmDeleteAll(false);
-             setFeedback({ msg: 'Todos os voos foram excluídos com sucesso.', isError: false });
-        }
+        await clearRootMesh();
+        setFlights([]);
+        setAirlines([]);
+        setActiveAirline('EM GERAL');
+        setConfirmDeleteAll(false);
+        setFeedback({ msg: 'Todos os voos foram excluídos com sucesso.', isError: false });
     } catch (e: any) {
-        setFeedback({ msg: `Erro de rede: ${e.message}`, isError: true });
+        setFeedback({ msg: `Erro ao excluir dados: ${e.message}`, isError: true });
     }
   };
 
@@ -388,17 +384,23 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
               return undefined;
           };
 
-          const vooRaw = getVal(['VOO', 'FLIGHT', 'NVOO', 'FLIGHTNUMBER', 'NUMEROVOO']);
-          const isVooKey = row['VÔO'] || row['VOO'] || row['Voo'] || row['vôo'];
+          const vooRaw = getVal(['VOO', 'FLIGHT', 'NVOO', 'FLIGHTNUMBER', 'NUMEROVOO', 'VSAIDA']);
+          const vooChegada = getVal(['VCHEG', 'CHEGADA', 'CHEG']);
+          const isVooKey = row['VÔO'] || row['VOO'] || row['Voo'] || row['vôo'] || row['V.saida'] || row['v.saida'];
           const destinoRaw = getVal(['DESTINO', 'ICAO', 'DESTINATION']);
-          const etaRaw = getVal(['ESTIMADO', 'ETA', 'CHEGADA']);
+          const etaRaw = getVal(['ESTIMADO', 'ETA']);
           const etdRaw = getVal(['SAIDA', 'ETD', 'PARTIDA']);
           const ciaRaw = getVal(['COMPANHIA', 'CIA', 'EMPRESA', 'AIRLINE']);
           const prefixoRaw = getVal(['PREFIXO', 'REGISTRATION', 'MATRICULA']);
           const modeloRaw = getVal(['MODELO', 'AERONAVE', 'EQUIPAMENTO', 'MODEL']);
           const posicaoRaw = getVal(['POSICAO', 'BOX', 'GATE', 'PORTAO']);
 
-          const voo = vooRaw?.toString().toUpperCase().trim() || isVooKey?.toString().toUpperCase().trim();
+          let voo = vooRaw?.toString().toUpperCase().trim() || isVooKey?.toString().toUpperCase().trim();
+          
+          if (!voo && vooChegada) {
+              voo = vooChegada.toString().toUpperCase().trim();
+          }
+
           let cia = ciaRaw?.toString().toUpperCase().trim() || '';
           
           if (!voo) {
@@ -500,7 +502,7 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
         let bestScore = 0;
         
         // Procurar qual linha é de fato o cabeçalho (a que tem mais 'palavras-chave' conhecidas)
-        const keyWords = ['PREFIXO', 'MATRICULA', 'COMPANHIA', 'MODELO', 'TAMPA', 'PORTINHOLA', 'PAINEL', 'OBSERVACOES'];
+        const keyWords = ['PREFIXO', 'MATRICULA', 'COMPANHIA', 'MODELO', 'TAMPA', 'PORTINHOLA', 'PAINEL', 'OBSERVACOES', 'VSAIDA', 'VCHEG', 'ICAO', 'ETA', 'ETD', 'POSICAO'];
         
         rawRows.forEach((row, index) => {
             if (!Array.isArray(row)) return;
@@ -621,7 +623,7 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
                             </tr>
                         ) : (
                             currentAirlineFlights.map((aircraft, rowIndex) => (
-                                <tr key={aircraft.id} data-row={rowIndex} className={`group transition-colors h-10 border-b ${isDarkMode ? 'hover:bg-slate-800/50 border-slate-800/50' : 'hover:bg-slate-50 border-slate-200'}`}>
+                                <tr key={aircraft.id || `row-${rowIndex}-${aircraft.flightNumber}`} data-row={rowIndex} className={`group transition-colors h-10 border-b ${isDarkMode ? 'hover:bg-slate-800/50 border-slate-800/50' : 'hover:bg-slate-50 border-slate-200'}`}>
                                     {COLUMNS.map((col, colIndex) => {
                                         const isFocused = focusedCell?.rowId === aircraft.id && focusedCell?.col === colIndex;
                                         const focusClasses = isFocused ? 'ring-2 ring-emerald-500 ring-inset z-10 shadow-[inset_0_0_0_2px_rgba(16,185,129,0.5)]' : '';
@@ -629,7 +631,7 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
                                         if (col.key === 'actions') {
                                             return (
                                                 <td 
-                                                  key={`${aircraft.id}-actions`} 
+                                                  key={`${aircraft.id || aircraft.flightNumber || rowIndex}-actions`} 
                                                   data-col={colIndex}
                                                   tabIndex={0}
                                                   onClick={() => setFocusedCell({ rowId: aircraft.id, col: colIndex })}
@@ -652,7 +654,7 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
                                         if (isBooleanField) {
                                             return (
                                                 <td 
-                                                  key={`${aircraft.id}-${col.key}-${colIndex}`} 
+                                                  key={`${aircraft.id || aircraft.flightNumber || rowIndex}-${col.key}-${colIndex}`} 
                                                   data-col={colIndex}
                                                   tabIndex={0}
                                                   onClick={() => setFocusedCell({ rowId: aircraft.id, col: colIndex })}
@@ -677,7 +679,7 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
 
                                         return (
                                             <td 
-                                                key={`${aircraft.id}-${col.key}-${colIndex}`} 
+                                                key={`${aircraft.id || aircraft.flightNumber || rowIndex}-${col.key}-${colIndex}`} 
                                                 data-col={colIndex}
                                                 tabIndex={0}
                                                 onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}

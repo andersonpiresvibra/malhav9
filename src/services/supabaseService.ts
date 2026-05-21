@@ -327,7 +327,7 @@ export const getDestinos = async (): Promise<any[]> => {
 export const getVehicles = async (): Promise<Vehicle[]> => {
   if (!isSupabaseConfigured()) return getLocalVehicles();
   try {
-    const { data, error } = await supabase.from('frotas').select('*');
+    const { data, error } = await supabase.from('vehicles').select('*');
     if (error) throw error;
     
     const mapped = data.map((v: any) => ({
@@ -352,7 +352,7 @@ export const getVehicles = async (): Promise<Vehicle[]> => {
     return mapped;
   } catch (err: any) {
     if (isTableMissingError(err)) {
-      console.info('[Modo Contingência] Tabela "frotas" indisponível no Supabase. Servindo dados do cache local.');
+      console.info('[Modo Contingência] Tabela "vehicles" indisponível no Supabase. Servindo dados do cache local.');
     } else {
       console.warn('[Supabase Error] getVehicles falhou:', err.message);
     }
@@ -366,7 +366,7 @@ export const updateVehicleOperator = async (vehicleFleetNumber: string | null, o
   if (!isSupabaseConfigured()) return;
   try {
     if (vehicleFleetNumber === null && operatorId) {
-      await supabase.from('frotas').update({ operator_id: null }).eq('operator_id', operatorId);
+      await supabase.from('vehicles').update({ operator_id: null }).eq('operator_id', operatorId);
       return;
     }
     
@@ -374,23 +374,23 @@ export const updateVehicleOperator = async (vehicleFleetNumber: string | null, o
       const cleanVehicleId = vehicleFleetNumber.replace('SRV-', '').replace('CTA-', '');
       const vehicle = vehiclesCache.find(v => v.fleetNumber === cleanVehicleId || v.id === vehicleFleetNumber);
       if (vehicle) {
-        await supabase.from('frotas').update({ operator_id: null }).eq('id', vehicle.id);
+        await supabase.from('vehicles').update({ operator_id: null }).eq('id', vehicle.id);
       } else {
-        await supabase.from('frotas').update({ operator_id: null }).eq('id', vehicleFleetNumber);
+        await supabase.from('vehicles').update({ operator_id: null }).eq('id', vehicleFleetNumber);
       }
       return;
     }
     
     if (vehicleFleetNumber && operatorId) {
-      await supabase.from('frotas').update({ operator_id: null }).eq('operator_id', operatorId);
+      await supabase.from('vehicles').update({ operator_id: null }).eq('operator_id', operatorId);
       
       const cleanVehicleId = vehicleFleetNumber.replace('SRV-', '').replace('CTA-', '');
       const vehicle = vehiclesCache.find(v => v.fleetNumber === cleanVehicleId || v.id === vehicleFleetNumber);
       
       if (vehicle) {
-        await supabase.from('frotas').update({ operator_id: operatorId }).eq('id', vehicle.id);
+        await supabase.from('vehicles').update({ operator_id: operatorId }).eq('id', vehicle.id);
       } else {
-        await supabase.from('frotas').update({ operator_id: operatorId }).eq('id', vehicleFleetNumber);
+        await supabase.from('vehicles').update({ operator_id: operatorId }).eq('id', vehicleFleetNumber);
       }
     }
   } catch (err: any) {
@@ -419,7 +419,7 @@ export const updateVehicleOperator = async (vehicleFleetNumber: string | null, o
 export const getOperators = async (): Promise<OperatorProfile[]> => {
   if (!isSupabaseConfigured()) return getLocalOperators();
   try {
-    const { data, error } = await supabase.from('operadores_geral').select('*, oper_do_dia(work_date, day_type)');
+    const { data, error } = await supabase.from('operators').select('*, operator_work_days(work_date, day_type)');
     if (error) throw error;
     
     operatorsCache = data.map((o: any) => ({ id: o.id, warName: o.war_name }));
@@ -461,7 +461,7 @@ export const getOperators = async (): Promise<OperatorProfile[]> => {
     })) as OperatorProfile[];
   } catch (err: any) {
     if (isTableMissingError(err)) {
-      console.info('[Modo Contingência] Tabela "operadores_geral" indisponível. Servindo dados do cache local.');
+      console.info('[Modo Contingência] Tabela "operators" indisponível. Servindo dados do cache local.');
     } else {
       console.warn('[Supabase Error] getOperators falhou:', err.message);
     }
@@ -475,7 +475,7 @@ export const updateOperatorWorkDays = async (operatorId: string, workDays: Array
   if (!isSupabaseConfigured()) return;
   try {
     const { error: deleteError } = await supabase
-      .from('oper_do_dia')
+      .from('operator_work_days')
       .delete()
       .eq('operator_id', operatorId);
       
@@ -489,7 +489,7 @@ export const updateOperatorWorkDays = async (operatorId: string, workDays: Array
       day_type: wd.type
     }));
 
-    const { error: insertError } = await supabase.from('oper_do_dia').insert(insertPayload);
+    const { error: insertError } = await supabase.from('operator_work_days').insert(insertPayload);
     if (insertError) throw insertError;
   } catch (err: any) {
     if (isTableMissingError(err)) {
@@ -509,50 +509,219 @@ export const updateOperatorWorkDays = async (operatorId: string, workDays: Array
 export const getAircrafts = async (): Promise<AircraftType[]> => {
   if (!isSupabaseConfigured()) return INITIAL_AERONAVES;
   try {
-    const { data, error } = await supabase.from('aeronaves').select('*');
+    const { data, error } = await supabase
+      .from('company_aircraft')
+      .select(`
+        id,
+        prefix,
+        company_id,
+        companies (
+          id,
+          name,
+          code
+        ),
+        aircraft_type_id,
+        aircraft_types (
+          id,
+          model,
+          manufacturer
+        )
+      `)
+      .order('prefix');
+      
     if (error) throw error;
-    return data as any[];
+    
+    return (data || []).map((da: any) => ({
+      id: da.id,
+      prefix: da.prefix || '',
+      model: da.aircraft_types?.model || 'Desconhecido',
+      airline: da.companies?.name || 'Desconhecido',
+      companhia_id: da.company_id,
+      missing_cap: false,
+      defective_door: false,
+      defective_panel: false,
+      no_autocut: false,
+      observations: ''
+    }));
   } catch (err: any) {
-    console.info('[Modo Contingência] Tabela "aeronaves" indisponível. Servindo do contingenciamento.');
+    console.warn('[Supabase] Erro ao carregar aeronaves, servindo do contingenciamento:', err);
     return INITIAL_AERONAVES;
   }
+};
+
+export const insertAircraft = async (aircraft: Omit<AircraftType, 'id'>): Promise<AircraftType> => {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase não configurado');
+  }
+
+  // 1. Resolve Company
+  let companyId = aircraft.companhia_id;
+  if (!companyId) {
+    const { data: extComp } = await supabase
+      .from('companies')
+      .select('id')
+      .eq('name', aircraft.airline)
+      .limit(1);
+    if (extComp && extComp.length > 0) {
+      companyId = extComp[0].id;
+    } else {
+      const code = aircraft.airline.substring(0, 3).toUpperCase();
+      const { data: newComp, error: insCompErr } = await supabase
+        .from('companies')
+        .insert({ name: aircraft.airline, code })
+        .select('id')
+        .single();
+      if (!insCompErr && newComp) {
+        companyId = newComp.id;
+      }
+    }
+  }
+
+  // 2. Resolve Aircraft Type
+  let aircraftTypeId: string | null = null;
+  const { data: extType } = await supabase
+    .from('aircraft_types')
+    .select('id')
+    .eq('model', aircraft.model)
+    .limit(1);
+  if (extType && extType.length > 0) {
+    aircraftTypeId = extType[0].id;
+  } else {
+    const { data: newType, error: insTypeErr } = await supabase
+      .from('aircraft_types')
+      .insert({ model: aircraft.model, manufacturer: 'Outros' })
+      .select('id')
+      .single();
+    if (!insTypeErr && newType) {
+      aircraftTypeId = newType.id;
+    }
+  }
+
+  // 3. Insert into company_aircraft
+  const { data: newAc, error: acErr } = await supabase
+    .from('company_aircraft')
+    .insert({
+      prefix: aircraft.prefix,
+      company_id: companyId,
+      aircraft_type_id: aircraftTypeId
+    })
+    .select(`
+      id,
+      prefix,
+      company_id,
+      companies (
+        id,
+        name,
+        code
+      ),
+      aircraft_type_id,
+      aircraft_types (
+        id,
+        model
+      )
+    `)
+    .single();
+
+  if (acErr) throw acErr;
+
+  return {
+    id: newAc.id,
+    prefix: newAc.prefix || '',
+    model: newAc.aircraft_types?.model || aircraft.model,
+    airline: newAc.companies?.name || aircraft.airline,
+    companhia_id: newAc.company_id,
+    missing_cap: false,
+    defective_door: false,
+    defective_panel: false,
+    no_autocut: false,
+    observations: ''
+  };
+};
+
+export const updateAircraftField = async (id: string, field: keyof AircraftType, value: any): Promise<void> => {
+  if (!isSupabaseConfigured()) return;
+
+  if (id.startsWith('temp-')) return;
+
+  if (field === 'prefix') {
+    const { error } = await supabase.from('company_aircraft').update({ prefix: value }).eq('id', id);
+    if (error) throw error;
+  } else if (field === 'airline') {
+    const { data: extComp } = await supabase.from('companies').select('id').eq('name', value).limit(1);
+    let companyId = extComp && extComp.length > 0 ? extComp[0].id : null;
+    if (!companyId) {
+      const code = value.substring(0, 3).toUpperCase();
+      const { data: newComp } = await supabase.from('companies').insert({ name: value, code }).select('id').single();
+      if (newComp) companyId = newComp.id;
+    }
+    if (companyId) {
+      const { error } = await supabase.from('company_aircraft').update({ company_id: companyId }).eq('id', id);
+      if (error) throw error;
+    }
+  } else if (field === 'model') {
+    const { data: extType } = await supabase.from('aircraft_types').select('id').eq('model', value).limit(1);
+    let typeId = extType && extType.length > 0 ? extType[0].id : null;
+    if (!typeId) {
+      const { data: newType } = await supabase.from('aircraft_types').insert({ model: value, manufacturer: 'Outros' }).select('id').single();
+      if (newType) typeId = newType.id;
+    }
+    if (typeId) {
+      const { error } = await supabase.from('company_aircraft').update({ aircraft_type_id: typeId }).eq('id', id);
+      if (error) throw error;
+    }
+  }
+};
+
+export const deleteAircraft = async (id: string): Promise<void> => {
+  if (!isSupabaseConfigured()) return;
+  const { error } = await supabase.from('company_aircraft').delete().eq('id', id);
+  if (error) throw error;
 };
 
 export const getFlights = async (dateRef: string): Promise<FlightData[]> => {
   if (!isSupabaseConfigured()) return getLocalOperationalFlights(dateRef);
   try {
     const { data, error } = await supabase
-      .from('malha_operacional')
-      .select('*, operadores_geral(war_name), frotas(fleet_number)')
-      .eq('date_ref', dateRef);
+      .from('flights')
+      .select(`
+        *,
+        operators (war_name),
+        companies (name, code),
+        company_aircraft (
+          id,
+          prefix,
+          aircraft_types (id, model)
+        )
+      `)
+      .eq('date', dateRef);
       
     if (error) throw error;
     
     return (data || []).map((f: any) => ({
       id: f.id,
-      date: f.date_ref,
+      date: f.date,
       flightNumber: f.flight_number,
       departureFlightNumber: f.departure_flight_number,
-      airline: f.airline,
-      airlineCode: f.airline_code,
-      model: f.model,
-      registration: f.registration,
+      airline: f.companies?.name || f.airline || '',
+      airlineCode: f.companies?.code || f.airline_code || '',
+      model: f.company_aircraft?.aircraft_types?.model || f.model || '',
+      registration: f.company_aircraft?.prefix || f.registration || '',
       origin: f.origin,
       destination: f.destination,
       eta: f.eta || '',
       etd: f.etd || '',
       actualArrivalTime: f.actual_arrival_time,
       positionId: f.position_id,
-      positionType: f.position_type as any,
+      positionType: f.position_type as any || 'PONTE_P70',
       pitId: f.pit_id,
-      wingSide: f.wing_side as any,
+      wingSide: f.wing_side as any || 'LEFT',
       fuelStatus: f.fuel_status || 0,
       status: f.status as FlightStatus,
-      operator: f.operadores_geral?.war_name || f.operator,
+      operator: f.operators?.war_name || f.operator,
       operatorId: f.operator_id || undefined,
       supportOperator: f.support_operator || undefined,
       supportOperatorId: f.support_operator_id || undefined,
-      fleet: f.frotas?.fleet_number || undefined,
+      fleet: f.vehicle_id || undefined,
       vehicleId: f.vehicle_id || undefined,
       vehicleType: f.vehicle_type as any,
       volume: f.volume,
@@ -569,7 +738,7 @@ export const getFlights = async (dateRef: string): Promise<FlightData[]> => {
     })) as FlightData[];
   } catch (err: any) {
     if (isTableMissingError(err)) {
-      console.info('[Modo Contingência] Tabela "malha_operacional" ausente. Servindo malha do cache local.');
+      console.info('[Modo Contingência] Tabela "flights" ausente. Servindo malha do cache local.');
     } else {
       console.warn('[Supabase Error] getFlights falhou:', err.message);
     }
@@ -580,7 +749,7 @@ export const getFlights = async (dateRef: string): Promise<FlightData[]> => {
 export const deleteAllFlightsByDate = async (dateRef: string): Promise<void> => {
   if (!isSupabaseConfigured()) return;
   try {
-    const { error } = await supabase.from('malha_operacional').delete().eq('date_ref', dateRef);
+    const { error } = await supabase.from('flights').delete().eq('date', dateRef);
     if (error) throw error;
   } catch (err: any) {
     if (isTableMissingError(err)) {
@@ -598,9 +767,9 @@ export const deleteInactiveFlightsByDate = async (dateRef: string): Promise<void
   if (!isSupabaseConfigured()) return;
   try {
     const { error } = await supabase
-      .from('malha_operacional')
+      .from('flights')
       .delete()
-      .eq('date_ref', dateRef)
+      .eq('date', dateRef)
       .is('operator_id', null)
       .in('status', ['CHEGADA', 'FILA']);
     if (error) throw error;
@@ -633,23 +802,43 @@ const cleanTime = (timeStr: string | null | undefined): string | null => {
 export const upsertFlight = async (flight: FlightData): Promise<void> => {
   if (!isSupabaseConfigured()) return;
   
+  // Resolve company_id
+  let companyId: string | null = null;
+  if (flight.airlineCode) {
+    const { data: cData } = await supabase.from('companies').select('id').eq('code', flight.airlineCode).limit(1);
+    if (cData && cData.length > 0) {
+      companyId = cData[0].id;
+    }
+  }
+
+  // Resolve company_aircraft_id
+  let companyAircraftId: string | null = null;
+  if (flight.registration) {
+    const { data: acData } = await supabase.from('company_aircraft').select('id').eq('prefix', flight.registration).limit(1);
+    if (acData && acData.length > 0) {
+      companyAircraftId = acData[0].id;
+    } else if (flight.registration && companyId) {
+      const { data: extType } = await supabase.from('aircraft_types').select('id').eq('model', flight.model || 'Unknown').limit(1);
+      let typeId = extType && extType.length > 0 ? extType[0].id : null;
+      if (!typeId) {
+        const { data: newType } = await supabase.from('aircraft_types').insert({ model: flight.model || 'Unknown', manufacturer: 'Unknown' }).select('id').single();
+        if (newType) typeId = newType.id;
+      }
+      const { data: newAc } = await supabase.from('company_aircraft').insert({ prefix: flight.registration, company_id: companyId, aircraft_type_id: typeId }).select('id').single();
+      if (newAc) companyAircraftId = newAc.id;
+    }
+  }
+
   const payload: any = {
-    date_ref: flight.date || getLocalTodayDateStr(),
+    date: flight.date || getLocalTodayDateStr(),
     flight_number: flight.flightNumber,
     departure_flight_number: flight.departureFlightNumber,
-    airline: flight.airline,
-    airline_code: flight.airlineCode,
-    model: flight.model,
-    registration: flight.registration,
     origin: flight.origin,
     destination: flight.destination,
     eta: cleanTime(flight.eta),
     etd: cleanTime(flight.etd),
     actual_arrival_time: cleanTime(flight.actualArrivalTime),
     position_id: flight.positionId,
-    position_type: flight.positionType || null,
-    pit_id: flight.pitId || null,
-    wing_side: flight.wingSide || null,
     fuel_status: flight.fuelStatus,
     status: flight.status,
     operator_id: (
@@ -662,17 +851,7 @@ export const upsertFlight = async (flight: FlightData): Promise<void> => {
         ? flight.supportOperatorId
         : (flight.supportOperator ? operatorsCache.find(o => o.warName === flight.supportOperator)?.id : null)
     ) || null,
-    support_operator: flight.supportOperator || null,
-    vehicle_id: (
-      flight.vehicleId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(flight.vehicleId)
-        ? flight.vehicleId
-        : (flight.vehicleId ? vehiclesCache.find(v => v.fleetNumber === String(flight.vehicleId))?.id : null)
-    ) || (
-      flight.fleet
-        ? vehiclesCache.find(v => v.fleetNumber === String(flight.fleet).replace('SRV-', '').replace('CTA-', ''))?.id
-        : null
-    ) || null,
-    vehicle_type: flight.vehicleType || null,
+    vehicle_id: flight.vehicleId || null,
     volume: flight.volume || 0,
     is_on_ground: flight.isOnGround || false,
     delay_justification: flight.delayJustification || null,
@@ -684,6 +863,8 @@ export const upsertFlight = async (flight: FlightData): Promise<void> => {
     is_excluded_from_queue: flight.isExcludedFromQueue || false,
     report: flight.report || {},
     logs: flight.logs || [],
+    company_id: companyId,
+    company_aircraft_id: companyAircraftId,
     updated_at: new Date().toISOString()
   };
 
@@ -692,7 +873,7 @@ export const upsertFlight = async (flight: FlightData): Promise<void> => {
   }
 
   try {
-    const { data, error } = await supabase.from('malha_operacional').upsert([payload]).select('id');
+    const { data, error } = await supabase.from('flights').upsert([payload]).select('id');
     if (error) throw error;
     if (data && data.length === 0) {
       throw new Error("Sincronização RLS bloqueada no Supabase.");
@@ -727,7 +908,7 @@ export const upsertFlight = async (flight: FlightData): Promise<void> => {
 export const deleteFlight = async (flightId: string): Promise<void> => {
   if (!isSupabaseConfigured()) return;
   try {
-    const { error } = await supabase.from('malha_operacional').delete().eq('id', flightId);
+    const { error } = await supabase.from('flights').delete().eq('id', flightId);
     if (error) throw error;
   } catch (err: any) {
     if (isTableMissingError(err)) {
@@ -744,96 +925,158 @@ export const deleteFlight = async (flightId: string): Promise<void> => {
 export const getRootMesh = async (): Promise<MeshFlight[]> => {
   if (!isSupabaseConfigured()) return getLocalRootMesh();
   try {
-    const { data, error } = await supabase.from('malha_raiz').select('*').order('etd');
-    if (error) throw error;
-    
-    return (data || []).map((f: any) => ({
-      id: f.id,
-      airline: f.airline_code || 'OUTRA',
-      airlineCode: f.airline_code || 'OUTRA',
-      flightNumber: f.flight_number,
-      departureFlightNumber: f.departure_flight_number || f.flight_number,
-      destination: f.destination,
-      etd: f.etd,
-      registration: f.registration || '',
-      eta: f.eta,
-      positionId: f.position_id || '',
-      actualArrivalTime: f.actual_arrival_time || '',
-      model: f.model || '',
-      disabled: f.is_disabled || false,
-      cia: f.airline_code
-    })) as MeshFlight[];
-  } catch (err: any) {
-    if (isTableMissingError(err)) {
-      console.info('[Modo Contingência] Servindo malha_raiz de contingência.');
+    // 1. Tenta usar a RPC get_root_mesh do V9
+    const { data, error } = await supabase.rpc('get_root_mesh');
+    if (!error && data) {
+      return data.map((f: any) => ({
+        id: f.mesh_id,
+        airline: f.company_name || 'OUTRA',
+        airlineCode: f.company_code || 'OUTRA',
+        flightNumber: f.departure_flight_number,
+        departureFlightNumber: f.departure_flight_number,
+        destination: f.destination,
+        etd: f.etd,
+        registration: f.prefix || '',
+        eta: f.eta || '',
+        positionId: f.position_code || '',
+        actualArrivalTime: '',
+        model: f.aircraft_model || '',
+        disabled: f.disabled || false,
+        cia: f.company_code
+      })) as MeshFlight[];
     }
+
+    // 2. Se a RPC falhar, faz uma query direta fazendo o join das tabelas novas do V9
+    const { data: directData, error: directError } = await supabase
+      .from('root_mesh_flights')
+      .select(`
+        id,
+        arrival_flight_number,
+        departure_flight_number,
+        destination,
+        etd,
+        eta,
+        disabled,
+        is_new,
+        company_id,
+        companies (
+          name,
+          code
+        ),
+        company_aircraft_id,
+        company_aircraft (
+          prefix,
+          model_display,
+          aircraft_types (
+            model
+          )
+        ),
+        position_id,
+        positions (
+          code
+        )
+      `)
+      .order('etd');
+      
+    if (directError) throw directError;
+
+    return (directData || []).map((f: any) => {
+      const model = f.company_aircraft?.model_display || f.company_aircraft?.aircraft_types?.model || '';
+      return {
+        id: f.id,
+        airline: f.companies?.name || 'OUTRA',
+        airlineCode: f.companies?.code || 'OUTRA',
+        flightNumber: f.departure_flight_number || f.arrival_flight_number,
+        departureFlightNumber: f.departure_flight_number || f.arrival_flight_number,
+        destination: f.destination,
+        etd: f.etd,
+        registration: f.company_aircraft?.prefix || '',
+        eta: f.eta || '',
+        positionId: f.positions?.code || f.position_id || '',
+        actualArrivalTime: '',
+        model: model,
+        disabled: f.disabled || false,
+        cia: f.companies?.code
+      };
+    }) as MeshFlight[];
+  } catch (err: any) {
+    console.warn('[Supabase] Erro ao carregar getRootMesh, fallback de contingência:', err);
     return getLocalRootMesh();
   }
 };
 
 export const upsertRootMesh = async (flights: MeshFlight[]): Promise<void> => {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !flights.length) return;
   
-  let payloadRaw = flights.map(f => {
-    const obj: any = {
-      flight_number: f.flightNumber || f.departureFlightNumber,
-      airline_code: (f as any).cia || f.airline || f.airlineCode || '',
-      destination: f.destination,
-      etd: cleanTime(f.etd),
-      eta: cleanTime(f.eta),
-      registration: f.registration,
-      model: f.model,
-      position_id: f.positionId,
-      actual_arrival_time: cleanTime(f.actualArrivalTime),
-      is_disabled: f.disabled || false,
-      updated_at: new Date().toISOString()
-    };
-    if (f.id) obj.id = f.id;
-    return obj;
-  });
-  
-  // Deduplicate
-  const seenFlights = new Set();
-  let payload = [];
-  for (const p of payloadRaw) {
-    if (!p.flight_number) continue;
-    if (!seenFlights.has(p.flight_number)) {
-      seenFlights.add(p.flight_number);
-      payload.push(p);
-    }
-  }
-
   try {
-    let maxAttempts = 10;
-    while (maxAttempts > 0) {
-      const { error } = await supabase.from('malha_raiz').upsert(payload, { onConflict: 'flight_number' });
-      if (!error) return;
+    // 1. Carrega dados de apoio para mapeamento relacional do V9
+    const [companiesRes, aircraftsRes, positionsRes] = await Promise.all([
+      supabase.from('companies').select('id, code'),
+      supabase.from('company_aircraft').select('id, prefix'),
+      supabase.from('positions').select('id, code')
+    ]);
 
-      const notFoundMatch = error.message.match(/Could not find the '([^']+)' column/);
-      if (notFoundMatch && notFoundMatch[1]) {
-        const missingCol = notFoundMatch[1];
-        payload = payload.map(p => {
-          const newP = { ...p } as any;
-          delete newP[missingCol];
-          return newP;
-        });
-        maxAttempts--;
-        continue;
+    const compList = companiesRes.data || [];
+    const airList = aircraftsRes.data || [];
+    const posList = positionsRes.data || [];
+
+    const payload = flights.map(f => {
+      const ciaCode = (f.airlineCode || f.airline || '').toUpperCase().trim();
+      
+      // Encontra ID da companhia
+      const matchedCompany = compList.find(c => c.code.toUpperCase() === ciaCode);
+      const company_id = matchedCompany ? matchedCompany.id : 'comp-latam'; // fallback genérico
+
+      // Encontra ID da aeronave pelo prefixo
+      const cleanReg = (f.registration || '').toUpperCase().trim();
+      const matchedAc = airList.find(a => a.prefix.toUpperCase() === cleanReg);
+      const company_aircraft_id = matchedAc ? matchedAc.id : null;
+
+      // Encontra ID da posição (ex: "pos-205" ou "205")
+      const cleanPos = (f.positionId || f.positionType || '').toUpperCase().trim();
+      const matchedPos = posList.find(p => p.code.toUpperCase() === cleanPos || p.id.toUpperCase() === cleanPos);
+      const position_id = matchedPos ? matchedPos.id : null;
+
+      const obj: any = {
+        id: f.id || `mr-${f.departureFlightNumber.toLowerCase()}`,
+        company_id,
+        company_aircraft_id,
+        arrival_flight_number: f.flightNumber || f.departureFlightNumber,
+        departure_flight_number: f.departureFlightNumber || f.flightNumber,
+        destination: f.destination || 'SBGR',
+        etd: cleanTime(f.etd),
+        eta: cleanTime(f.eta),
+        position_id,
+        disabled: f.disabled || false,
+        is_new: f.isNew || false,
+        updated_at: new Date().toISOString()
+      };
+      return obj;
+    });
+
+    // Deduplica por departure_flight_number
+    const seen = new Set();
+    const finalPayload = [];
+    for (const item of payload) {
+      if (!item.departure_flight_number) continue;
+      if (!seen.has(item.departure_flight_number)) {
+        seen.add(item.departure_flight_number);
+        finalPayload.push(item);
       }
-      throw error;
     }
+
+    const { error } = await supabase.from('root_mesh_flights').upsert(finalPayload);
+    if (error) throw error;
   } catch (err: any) {
-    if (isTableMissingError(err)) {
-      console.info('[Modo Contingência] Salvando malha raiz de contingência localmente.');
-      saveLocalRootMesh(flights);
-    }
+    console.warn('[Supabase] erro no upsertRootMesh, fallback de contingência local:', err);
+    saveLocalRootMesh(flights);
   }
 };
 
 export const deleteRootMeshFlight = async (flightId: string): Promise<void> => {
   if (!isSupabaseConfigured()) return;
   try {
-    const { error } = await supabase.from('malha_raiz').delete().eq('id', flightId);
+    const { error } = await supabase.from('root_mesh_flights').delete().eq('id', flightId);
     if (error) throw error;
   } catch (err: any) {
     if (isTableMissingError(err)) {
@@ -847,7 +1090,7 @@ export const deleteRootMeshFlight = async (flightId: string): Promise<void> => {
 export const clearRootMesh = async (): Promise<void> => {
   if (!isSupabaseConfigured()) return;
   try {
-    const { error } = await supabase.from('malha_raiz').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    const { error } = await supabase.from('root_mesh_flights').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     if (error) throw error;
   } catch (err: any) {
     if (isTableMissingError(err)) {
@@ -860,33 +1103,68 @@ export const getBaseMeshFlights = async (dateRef: string): Promise<MeshFlight[]>
   if (!isSupabaseConfigured()) return getLocalBaseMeshFlights(dateRef);
   try {
     const { data, error } = await supabase
-      .from('malha_dia')
-      .select('*')
-      .eq('date', dateRef)
-      .order('etd');
-      
+      .from('mesh_flights')
+      .select(`
+        id,
+        root_mesh_id,
+        mesh_date,
+        company_aircraft_id,
+        company_aircraft (
+          prefix,
+          model_display,
+          aircraft_types (
+            model
+          )
+        ),
+        eta,
+        position_id,
+        actual_arrival_time,
+        disabled,
+        is_new,
+        root_mesh_flights (
+          id,
+          arrival_flight_number,
+          departure_flight_number,
+          destination,
+          etd,
+          company_id,
+          companies (
+            name,
+            code
+          )
+        )
+      `)
+      .eq('mesh_date', dateRef);
+       
     if (error) throw error;
     
-    return (data || []).map(dbFlight => ({
-      id: dbFlight.id,
-      date: dbFlight.date || dateRef,
-      airline: dbFlight.airline || '',
-      airlineCode: dbFlight.airline_code || '',
-      flightNumber: dbFlight.flight_number || '',
-      departureFlightNumber: dbFlight.departure_flight_number || dbFlight.flight_number || '',
-      destination: dbFlight.destination || '',
-      etd: dbFlight.etd || '00:00',
-      registration: dbFlight.registration || '',
-      eta: dbFlight.eta || dbFlight.etd || '00:00',
-      positionId: dbFlight.position_id || '',
-      actualArrivalTime: dbFlight.actual_arrival_time || '',
-      model: dbFlight.model || '',
-      disabled: dbFlight.is_disabled || false
-    }));
+    return (data || []).map(dbFlight => {
+      const root = dbFlight.root_mesh_flights as any || {};
+      const company = root.companies || {};
+      const aircraft = dbFlight.company_aircraft as any || {};
+      const model = aircraft.model_display || aircraft.aircraft_types?.model || '';
+      
+      return {
+        id: dbFlight.id,
+        date: dbFlight.mesh_date || dateRef,
+        root_mesh_id: dbFlight.root_mesh_id,
+        airline: company.name || '',
+        airlineCode: company.code || '',
+        flightNumber: root.arrival_flight_number || root.departure_flight_number || '',
+        departureFlightNumber: root.departure_flight_number || root.arrival_flight_number || '',
+        destination: root.destination || '',
+        etd: root.etd || '00:00',
+        registration: aircraft.prefix || '',
+        eta: dbFlight.eta || root.eta || '00:00',
+        positionId: dbFlight.position_id || '',
+        actualArrivalTime: dbFlight.actual_arrival_time || '',
+        model: model,
+        disabled: dbFlight.disabled || false,
+        isNew: dbFlight.is_new || false
+      };
+    });
   } catch (err: any) {
-    if (isTableMissingError(err)) {
-      console.info('[Modo Contingência] Servindo malha_dia de contingência local.');
-    }
+    console.warn('[Supabase] Erro ao carregar getBaseMeshFlights, fallback local:', err);
     return getLocalBaseMeshFlights(dateRef);
   }
 };
@@ -894,59 +1172,54 @@ export const getBaseMeshFlights = async (dateRef: string): Promise<MeshFlight[]>
 export const upsertBaseMeshFlights = async (flightsBase: MeshFlight[]): Promise<void> => {
   if (!isSupabaseConfigured() || !flightsBase.length) return;
   
-  let payload = flightsBase.map(f => {
-    const obj: any = {
-      date: f.date,
-      airline: f.airline,
-      airline_code: f.airlineCode,
-      flight_number: f.flightNumber,
-      departure_flight_number: f.departureFlightNumber,
-      destination: f.destination,
-      etd: f.etd,
-      registration: f.registration,
-      eta: f.eta,
-      position_id: f.positionId,
-      actual_arrival_time: f.actualArrivalTime,
-      model: f.model,
-      updated_at: new Date().toISOString()
-    };
-    if (f.id && !f.id.toString().startsWith('mesh-')) {
-       obj.id = f.id;
-    }
-    return obj;
-  });
-
   try {
-    let maxAttempts = 10;
-    while (maxAttempts > 0) {
-      const { error } = await supabase.from('malha_dia').upsert(payload);
-      if (!error) return;
+    const [roofRes, acRes] = await Promise.all([
+      supabase.from('root_mesh_flights').select('id, departure_flight_number'),
+      supabase.from('company_aircraft').select('id, prefix')
+    ]);
+    const rootFlights = roofRes.data || [];
+    const aircrafts = acRes.data || [];
 
-      const notFoundMatch = error.message.match(/Could not find the '([^']+)' column/);
-      if (notFoundMatch && notFoundMatch[1]) {
-        const missingCol = notFoundMatch[1];
-        payload = payload.map(p => {
-          const newP = { ...p } as any;
-          delete newP[missingCol];
-          return newP;
-        });
-        maxAttempts--;
-        continue;
-      }
-      throw error;
-    }
+    const dateRef = flightsBase[0].date || getLocalTodayDateStr();
+
+    let payload = flightsBase.map(f => {
+      const flightNum = (f.departureFlightNumber || f.flightNumber || '').toUpperCase().trim();
+      const matchedRoot = rootFlights.find(r => r.departure_flight_number.toUpperCase().trim() === flightNum);
+      const root_mesh_id = matchedRoot ? matchedRoot.id : f.id || null;
+
+      const reg = (f.registration || '').toUpperCase().trim();
+      const matchedAc = aircrafts.find(a => a.prefix.toUpperCase().trim() === reg);
+      const company_aircraft_id = matchedAc ? matchedAc.id : null;
+
+      const obj: any = {
+        id: f.id && !f.id.toString().startsWith('mesh-') && !f.id.toString().startsWith('temp-') 
+          ? f.id 
+          : `mesh-${f.date || dateRef}-${flightNum.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+        root_mesh_id,
+        mesh_date: f.date || dateRef,
+        company_aircraft_id,
+        eta: cleanTime(f.eta),
+        position_id: f.positionId || null,
+        actual_arrival_time: cleanTime(f.actualArrivalTime),
+        disabled: f.disabled || false,
+        is_new: f.isNew || false,
+        updated_at: new Date().toISOString()
+      };
+      return obj;
+    });
+
+    const { error } = await supabase.from('mesh_flights').upsert(payload);
+    if (error) throw error;
   } catch (err: any) {
-    if (isTableMissingError(err)) {
-      console.info('[Modo Contingência] Salvando malha base de contingência localmente.');
-      saveLocalBaseMeshFlights(flightsBase);
-    }
+    console.warn('[Supabase] erro no upsertBaseMeshFlights, fallback local:', err);
+    saveLocalBaseMeshFlights(flightsBase);
   }
 };
 
 export const clearBaseMeshFlights = async (dateRef: string): Promise<void> => {
    if (!isSupabaseConfigured()) return;
    try {
-     const { error } = await supabase.from('malha_dia').delete().eq('date', dateRef);
+     const { error } = await supabase.from('mesh_flights').delete().eq('mesh_date', dateRef);
      if (error) throw error;
    } catch (err: any) {
      if (isTableMissingError(err)) {
@@ -963,7 +1236,7 @@ export const clearBaseMeshFlights = async (dateRef: string): Promise<void> => {
 export const clearAllBaseMeshFlights = async (): Promise<void> => {
    if (!isSupabaseConfigured()) return;
    try {
-     const { error } = await supabase.from('malha_dia').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+     const { error } = await supabase.from('mesh_flights').delete().neq('id', '00000000-0000-0000-0000-000000000000');
      if (error) throw error;
    } catch (err: any) {
      if (isTableMissingError(err)) {
@@ -973,87 +1246,88 @@ export const clearAllBaseMeshFlights = async (): Promise<void> => {
 };
 
 export const bulkInsertFlights = async (flights: FlightData[]): Promise<void> => {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !flights.length) return;
   
-  const payload = flights.map(flight => {
-    const obj: any = {
-      date_ref: flight.date || getLocalTodayDateStr(),
-      flight_number: flight.flightNumber,
-      departure_flight_number: flight.departureFlightNumber,
-      airline: flight.airline,
-      airline_code: flight.airlineCode,
-      model: flight.model,
-      registration: flight.registration,
-      origin: flight.origin,
-      destination: flight.destination,
-      eta: flight.eta,
-      etd: flight.etd,
-      actual_arrival_time: flight.actualArrivalTime,
-      position_id: flight.positionId,
-      position_type: flight.positionType || null,
-      pit_id: flight.pitId || null,
-      wing_side: flight.wingSide || null,
-      fuel_status: flight.fuelStatus,
-      status: flight.status,
-      operator_id: (
-        flight.operatorId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(flight.operatorId)
-          ? flight.operatorId
-          : (flight.operator ? operatorsCache.find(o => o.warName === flight.operator)?.id : null)
-      ) || null,
-      support_operator_id: (
-        flight.supportOperatorId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(flight.supportOperatorId)
-          ? flight.supportOperatorId
-          : (flight.supportOperator ? operatorsCache.find(o => o.warName === flight.supportOperator)?.id : null)
-      ) || null,
-      support_operator: flight.supportOperator || null,
-      vehicle_id: (
-        flight.vehicleId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(flight.vehicleId)
-          ? flight.vehicleId
-          : (flight.vehicleId ? vehiclesCache.find(v => v.fleetNumber === String(flight.vehicleId))?.id : null)
-      ) || (
-        flight.fleet
-          ? vehiclesCache.find(v => v.fleetNumber === String(flight.fleet).replace('SRV-', '').replace('CTA-', ''))?.id
-          : null
-      ) || null,
-      vehicle_type: flight.vehicleType || null,
-      volume: flight.volume || 0,
-      is_on_ground: flight.isOnGround || false,
-      delay_justification: flight.delayJustification || null,
-      designation_time: flight.designationTime?.toISOString() || null,
-      start_time: flight.startTime?.toISOString() || null,
-      end_time: flight.endTime?.toISOString() || null,
-      assignment_time: flight.assignmentTime?.toISOString() || null,
-      assigned_by_lt: flight.assignedByLt || null,
-      is_excluded_from_queue: flight.isExcludedFromQueue || false,
-      report: flight.report || {},
-      logs: flight.logs || [],
-      updated_at: new Date().toISOString()
-    };
-    if (flight.id) {
-       obj.id = flight.id;
-    }
-    return obj;
-  });
-
   try {
-    const { error } = await supabase.from('malha_operacional').upsert(payload);
+    const uniqueCodes = Array.from(new Set(flights.map(f => f.airlineCode).filter(Boolean)));
+    const companyMap: Record<string, string> = {};
+    if (uniqueCodes.length > 0) {
+      const { data: cos } = await supabase.from('companies').select('id, code').in('code', uniqueCodes);
+      if (cos) {
+        cos.forEach((c: any) => { companyMap[c.code] = c.id; });
+      }
+    }
+    
+    const uniqueRegs = Array.from(new Set(flights.map(f => f.registration).filter(Boolean)));
+    const aircraftMap: Record<string, string> = {};
+    if (uniqueRegs.length > 0) {
+      const { data: acs } = await supabase.from('company_aircraft').select('id, prefix').in('prefix', uniqueRegs);
+      if (acs) {
+        acs.forEach((a: any) => { aircraftMap[a.prefix] = a.id; });
+      }
+    }
+
+    const payload = flights.map(flight => {
+      const obj: any = {
+        date: flight.date || getLocalTodayDateStr(),
+        flight_number: flight.flightNumber,
+        departure_flight_number: flight.departureFlightNumber,
+        origin: flight.origin,
+        destination: flight.destination,
+        eta: cleanTime(flight.eta),
+        etd: cleanTime(flight.etd),
+        actual_arrival_time: cleanTime(flight.actualArrivalTime),
+        position_id: flight.positionId,
+        fuel_status: flight.fuelStatus,
+        status: flight.status,
+        operator_id: (
+          flight.operatorId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(flight.operatorId)
+            ? flight.operatorId
+            : (flight.operator ? operatorsCache.find(o => o.warName === flight.operator)?.id : null)
+        ) || null,
+        support_operator_id: (
+          flight.supportOperatorId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(flight.supportOperatorId)
+            ? flight.supportOperatorId
+            : (flight.supportOperator ? operatorsCache.find(o => o.warName === flight.supportOperator)?.id : null)
+        ) || null,
+        vehicle_id: flight.vehicleId || null,
+        volume: flight.volume || 0,
+        is_on_ground: flight.isOnGround || false,
+        delay_justification: flight.delayJustification || null,
+        designation_time: flight.designationTime?.toISOString() || null,
+        start_time: flight.startTime?.toISOString() || null,
+        end_time: flight.endTime?.toISOString() || null,
+        assignment_time: flight.assignmentTime?.toISOString() || null,
+        assigned_by_lt: flight.assignedByLt || null,
+        is_excluded_from_queue: flight.isExcludedFromQueue || false,
+        report: flight.report || {},
+        logs: flight.logs || [],
+        company_id: flight.airlineCode ? companyMap[flight.airlineCode] || null : null,
+        company_aircraft_id: flight.registration ? aircraftMap[flight.registration] || null : null,
+        updated_at: new Date().toISOString()
+      };
+      if (flight.id) {
+         obj.id = flight.id;
+      }
+      return obj;
+    });
+
+    const { error } = await supabase.from('flights').upsert(payload);
     if (error) throw error;
   } catch (err: any) {
-    if (isTableMissingError(err)) {
-      console.info('[Modo Contingência] Salvando inserção em lote de voos localmente.');
-      const saved = localStorage.getItem('contingency_malha_operacional');
-      let currentList: FlightData[] = saved ? JSON.parse(saved) : [];
-      
-      flights.forEach(flight => {
-        const index = currentList.findIndex(f => f.id === flight.id || (f.flightNumber === flight.flightNumber && f.date === flight.date));
-        if (index >= 0) {
-          currentList[index] = flight;
-        } else {
-          currentList.push(flight);
-        }
-      });
-      saveLocalOperationalFlights(currentList);
-    }
+    console.warn('[Supabase] bulkInsertFlights falhou, fallback local:', err.message);
+    const saved = localStorage.getItem('contingency_malha_operacional');
+    let currentList: FlightData[] = saved ? JSON.parse(saved) : [];
+    
+    flights.forEach(flight => {
+      const index = currentList.findIndex(f => f.id === flight.id || (f.flightNumber === flight.flightNumber && f.date === flight.date));
+      if (index >= 0) {
+        currentList[index] = flight;
+      } else {
+        currentList.push(flight);
+      }
+    });
+    saveLocalOperationalFlights(currentList);
   }
 };
 

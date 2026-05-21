@@ -11,7 +11,7 @@ import { TimeConflictModal } from './TimeConflictModal';
 import { BulkNextDayModal } from './BulkNextDayModal';
 import { InlineCalendar } from './ui/InlineCalendar';
 import { supabase } from '../lib/supabase';
-import { getBaseMeshFlights, upsertBaseMeshFlights, clearBaseMeshFlights, getDestinos, getRootMesh } from '../services/supabaseService';
+import { getBaseMeshFlights, upsertBaseMeshFlights, clearBaseMeshFlights, getDestinos, getRootMesh, getAircrafts } from '../services/supabaseService';
 import { formatAirlineName } from '../utils/airlineUtils';
 import { downloadTemplate } from '../utils/excelTemplateUtils';
 
@@ -205,8 +205,8 @@ export const OperationalMesh: React.FC<OperationalMeshProps> = ({
   const [destinosDB, setDestinosDB] = useState<StaticFlight[]>([]);
 
   useEffect(() => {
-    supabase.from('aeronaves').select('*').then(res => {
-      if (res.data) setAircraftsDB(res.data as AircraftType[]);
+    getAircrafts().then(aircrafts => {
+      setAircraftsDB(aircrafts);
     });
     getDestinos().then(destinos => {
       setDestinosDB(destinos as StaticFlight[]);
@@ -1488,9 +1488,9 @@ export const OperationalMesh: React.FC<OperationalMeshProps> = ({
                     );
                 
                 return (
-                  <React.Fragment key={flight.id}>
+                  <React.Fragment key={flight.id || `frag-${flight.flightNumber}-${rIdx}`}>
                     <tr 
-                      key={flight.id}
+                      key={flight.id || `row-${flight.flightNumber}-${rIdx}`}
                       data-row={rIdx}
                       onContextMenu={(e) => {
                         e.preventDefault();
@@ -1529,7 +1529,7 @@ export const OperationalMesh: React.FC<OperationalMeshProps> = ({
                         if (col.key === 'actions') {
                           return (
                             <td 
-                              key={`${flight.id}-actions`}
+                              key={`${flight.id || rIdx}-actions`}
                               className={`p-0 relative h-10 text-center pointer-events-auto actions-container border-r border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}
                             >
                               <div className="flex items-center justify-center w-full h-full gap-1">
@@ -1615,7 +1615,7 @@ export const OperationalMesh: React.FC<OperationalMeshProps> = ({
 
                         return (
                           <td 
-                            key={`${flight.id}-${String(col.key)}`} 
+                            key={`${flight.id || rIdx}-${String(col.key)}`} 
                             data-col={cIdx}
                             onClick={(e) => {
                               if (flight.disabled) return;
