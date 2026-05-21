@@ -1,5 +1,5 @@
+import { fileURLToPath } from "url"
 import path from "path"
-const __dirname = import.meta.dirname
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 import { inspectAttr } from 'kimi-plugin-inspect-react'
@@ -14,12 +14,12 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
-  envDir: path.resolve(__dirname),
+  envDir: fileURLToPath(new URL('.', import.meta.url)),
   build: {
-    outDir: path.resolve(__dirname, "dist"),
+    outDir: "dist",
     emptyOutDir: true,
   },
 })
