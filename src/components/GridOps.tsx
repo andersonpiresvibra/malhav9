@@ -29,6 +29,7 @@ import {
   upsertFlight,
   deleteFlight,
   getDestinos,
+  bulkInsertFlights,
 } from "../services/supabaseService";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -3158,6 +3159,12 @@ export const GridOps: React.FC<GridOpsProps> = ({
               <button
                 onClick={() => {
                   if (onUpdateFlights && meshFlights) {
+                    const d = new Date();
+                    d.setDate(d.getDate() + activeDateOffset);
+                    const dateStr = getLocalDateStr(d);
+
+                    let finalFlights: FlightData[] = [];
+
                     onUpdateFlights((prev) => {
                       // Manter voos existentes que já foram processados
                       const existingIds = new Set(prev.map((f) => f.id));
@@ -3168,13 +3175,14 @@ export const GridOps: React.FC<GridOpsProps> = ({
                             return prev.find((f) => f.id === m.id)!;
                           return {
                             id: m.id,
-                            flightNumber: "--",
+                            date: m.date || dateStr,
+                            flightNumber: m.flightNumber || m.departureFlightNumber || "--",
                             departureFlightNumber: m.departureFlightNumber,
                             airline: m.airline,
                             airlineCode: m.airlineCode,
                             model: m.model || "",
                             registration: m.registration || "",
-                            origin: "",
+                            origin: m.origin || "",
                             destination: m.destination,
                             eta: m.eta || "--:--",
                             etd: m.etd,
@@ -3184,8 +3192,17 @@ export const GridOps: React.FC<GridOpsProps> = ({
                             logs: [],
                           };
                         });
+                      finalFlights = newFlights as any[];
                       return newFlights as any[]; // Type cast handled by external context
                     });
+
+                    // Persistência imediata no Supabase para impedir sumiço nos polls de 10s
+                    if (finalFlights.length > 0) {
+                      bulkInsertFlights(finalFlights).catch((err) => {
+                        console.error("Falha ao salvar a sincronização no banco operacional:", err);
+                      });
+                    }
+
                     addToast(
                       "SINCRONIZAÇÃO",
                       "Voos da Malha Base sincronizados!",

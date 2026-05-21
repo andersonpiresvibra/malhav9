@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "Malha V9",
+  "description": "SaaS mission-critical de gestão de combustível de aviação com Copiloto de IA para a operação do Aeroporto Internacional de Guarulhos (SBGR).",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

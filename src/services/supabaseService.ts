@@ -18,6 +18,25 @@ const isTableMissingError = (err: any): boolean => {
   );
 };
 
+export const normalizeAirlineCode = (codeOrName: string): string => {
+  const upper = (codeOrName || '').toUpperCase().trim();
+  if (!upper) return '';
+  if (upper.includes('LATAM') || upper === 'LA' || upper === 'TAM' || upper === 'JJ') return 'LA';
+  if (upper.includes('GOL') || upper === 'G3' || upper === 'RG' || upper.includes('GLO')) return 'G3';
+  if (upper.includes('AZUL') || upper === 'AD' || upper === 'AZU') return 'AD';
+  if (upper.includes('VOEPASS') || upper === 'VP' || upper === 'VOE') return 'VP';
+  if (upper.includes('COPA') || upper === 'CM' || upper === 'CMP') return 'CM';
+  if (upper.includes('TAP') || upper === 'TP') return 'TP';
+  if (upper.includes('AFR') || upper.includes('FRANCE') || upper === 'AF') return 'AF';
+  if (upper.includes('LH') || upper.includes('LUFTHANSA') || upper === 'DLH') return 'LH';
+  if (upper.includes('UA') || upper.includes('UNITED') || upper === 'UAL') return 'UA';
+  if (upper.includes('AA') || upper.includes('AMERICAN') || upper === 'AAL') return 'AA';
+  if (upper.includes('KLM') || upper === 'KL') return 'KL';
+  if (upper.includes('DELTA') || upper === 'DL' || upper === 'DAL') return 'DL';
+  if (upper.includes('TOTAL') || upper === 'TT') return 'TT';
+  return upper.substring(0, 2);
+};
+
 // === SEMENTE ESTÁTICA DO PROJETO (FALLBACKS DE ALTA FIDELIDADE) ===
 const INITIAL_FROTAS = [
   { fleet_number: '2104', type: 'SERVIDOR', manufacturer: 'FORD', status: 'DISPONÍVEL', capacity: null, max_flow_rate: 1000, has_platform: false },
@@ -804,10 +823,16 @@ export const upsertFlight = async (flight: FlightData): Promise<void> => {
   
   // Resolve company_id
   let companyId: string | null = null;
-  if (flight.airlineCode) {
-    const { data: cData } = await supabase.from('companies').select('id').eq('code', flight.airlineCode).limit(1);
-    if (cData && cData.length > 0) {
-      companyId = cData[0].id;
+  if (flight.airlineCode || flight.airline) {
+    const normCia = normalizeAirlineCode(flight.airlineCode || flight.airline || '');
+    const { data: cData } = await supabase.from('companies').select('id, code, name');
+    if (cData) {
+      const match = cData.find(c => 
+        c.code.toUpperCase() === normCia || 
+        c.code.toUpperCase() === (flight.airlineCode || '').toUpperCase().trim() ||
+        c.name.toUpperCase().includes((flight.airline || '').toUpperCase().trim())
+      );
+      if (match) companyId = match.id;
     }
   }
 
@@ -1022,9 +1047,14 @@ export const upsertRootMesh = async (flights: MeshFlight[]): Promise<void> => {
 
     const payload = flights.map(f => {
       const ciaCode = (f.airlineCode || f.airline || '').toUpperCase().trim();
+      const normCia = normalizeAirlineCode(f.airlineCode || f.airline || '');
       
-      // Encontra ID da companhia
-      const matchedCompany = compList.find(c => c.code.toUpperCase() === ciaCode);
+      // Encontra ID da companhiav9 com normalizacao para evitar fallbacks de Latam
+      const matchedCompany = compList.find(c => 
+        c.code.toUpperCase() === normCia || 
+        c.code.toUpperCase() === ciaCode ||
+        c.id.toLowerCase() === ciaCode.toLowerCase()
+      );
       const company_id = matchedCompany ? matchedCompany.id : 'comp-latam'; // fallback genérico
 
       // Encontra ID da aeronave pelo prefixo
@@ -1249,14 +1279,21 @@ export const bulkInsertFlights = async (flights: FlightData[]): Promise<void> =>
   if (!isSupabaseConfigured() || !flights.length) return;
   
   try {
-    const uniqueCodes = Array.from(new Set(flights.map(f => f.airlineCode).filter(Boolean)));
-    const companyMap: Record<string, string> = {};
-    if (uniqueCodes.length > 0) {
-      const { data: cos } = await supabase.from('companies').select('id, code').in('code', uniqueCodes);
-      if (cos) {
-        cos.forEach((c: any) => { companyMap[c.code] = c.id; });
-      }
-    }
+    // Carrega todas as companhias para fazer o mapeamento normalizado v9
+    const { data: cos } = await supabase.from('companies').select('id, code, name');
+    const compList = cos || [];
+    
+    const getCompanyId = (airlineCode?: string, airlineName?: string): string | null => {
+      if (!airlineCode && !airlineName) return null;
+      const codeOrName = (airlineCode || airlineName || '');
+      const normCia = normalizeAirlineCode(codeOrName);
+      const match = compList.find(c => 
+        c.code.toUpperCase() === normCia || 
+        c.code.toUpperCase() === codeOrName.toUpperCase().trim() ||
+        c.name.toUpperCase().includes(codeOrName.toUpperCase().trim())
+      );
+      return match ? match.id : null;
+    };
     
     const uniqueRegs = Array.from(new Set(flights.map(f => f.registration).filter(Boolean)));
     const aircraftMap: Record<string, string> = {};
@@ -1302,7 +1339,7 @@ export const bulkInsertFlights = async (flights: FlightData[]): Promise<void> =>
         is_excluded_from_queue: flight.isExcludedFromQueue || false,
         report: flight.report || {},
         logs: flight.logs || [],
-        company_id: flight.airlineCode ? companyMap[flight.airlineCode] || null : null,
+        company_id: getCompanyId(flight.airlineCode, flight.airline),
         company_aircraft_id: flight.registration ? aircraftMap[flight.registration] || null : null,
         updated_at: new Date().toISOString()
       };

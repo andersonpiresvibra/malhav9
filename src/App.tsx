@@ -26,6 +26,7 @@ import { POSITIONS_METADATA, POSITIONS_BY_PATIO, PositionMetadata } from './cons
 import { GridOps } from './components/GridOps';
 import { AerodromoAdmin } from './components/AerodromoAdmin';
 import { LayoutPreferencesModal, UserLayoutPreferences, defaultPreferences } from './components/modals/LayoutPreferencesModal';
+import { AIAssistant } from './components/AIAssistant';
 
 const App: React.FC = () => {
   const { user, loading: authLoading, warName } = useAuth();
@@ -989,6 +990,7 @@ const App: React.FC = () => {
           <X size={20} />
         </button>
       )}
+      <AIAssistant isDarkMode={isDarkMode} />
     </div>
   );
 };
