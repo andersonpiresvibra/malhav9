@@ -524,7 +524,7 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
                                                       type="file" 
                                                       accept="image/png, image/jpeg" 
                                                       className="hidden" 
-                                                      ref={(el) => (photoInputRefs.current[airline.id] = el)}
+                                                      ref={(el) => { photoInputRefs.current[airline.id] = el; }}
                                                       onChange={(e) => handlePhotoFileChange(airline.id, e)} 
                                                     />
                                                 </td>

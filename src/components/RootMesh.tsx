@@ -1449,7 +1449,7 @@ export const RootMesh: React.FC<RootMeshProps> = ({
                                   ${flight.disabled ? (isDarkMode ? 'text-slate-500/30' : 'text-slate-400/50') : (isDarkMode ? 'text-slate-200' : 'text-slate-700')}
                                   ${col.key === 'airline' ? 'justify-start text-left' : 'justify-center text-center'}
                                   ${!col.isVariable && !isCellFocused && !isMandatoryEmpty ? (isDarkMode ? 'text-indigo-400' : 'text-indigo-700') : ''}
-                                  ${col.key === 'etd' && flight[col.key] === 'PRÉ' ? (isDarkMode ? 'text-blue-400 font-black' : 'text-blue-600 font-black text-[12px]') : ''}
+                                  ${col.key === 'etd' && (flight as any)[col.key] === 'PRÉ' ? (isDarkMode ? 'text-blue-400 font-black' : 'text-blue-600 font-black text-[12px]') : ''}
                                   ${isMandatoryEmpty ? 'text-red-500 animate-pulse font-black text-xs' : ''}
                                   ${col.key === 'positionId' && positionRestrictions[cellValue as string] === 'CTA' ? 'text-slate-950 font-black' : ''}
                                 `}

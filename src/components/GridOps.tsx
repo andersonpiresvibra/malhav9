@@ -1423,7 +1423,7 @@ export const GridOps: React.FC<GridOpsProps> = ({
           }
         }
         let augmentedFleetType = f.fleetType;
-        if ((!augmentedFleetType || augmentedFleetType === "--") && f.fleet) {
+        if ((!augmentedFleetType || (augmentedFleetType as string) === "--") && f.fleet) {
           const cleanFleet = String(f.fleet).replace(/[^0-9A-Z]/gi, "");
           const vMatch = vehicles.find(
             (v) => String(v.id).replace(/[^0-9A-Z]/gi, "") === cleanFleet,
@@ -2151,6 +2151,7 @@ export const GridOps: React.FC<GridOpsProps> = ({
   ) => {
     let newLog: FlightLog;
     const flight = flights.find((f) => f.id === id);
+    if (!flight) return;
 
     if (delayJustification) {
       newLog = createNewLog(
@@ -5319,7 +5320,7 @@ export const GridOps: React.FC<GridOpsProps> = ({
               if (!airline) return;
 
               const fv = {
-                id: crypto.randomUUID(),
+                id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).substring(2, 11),
                 airline: airline,
                 airlineCode: String(airline).substring(0, 2).toUpperCase(),
                 departureFlightNumber: String(row[1] || ""),
@@ -5337,7 +5338,7 @@ export const GridOps: React.FC<GridOpsProps> = ({
             });
 
             if (newFlights.length > 0) {
-              setMeshFlights((prev) => [...prev, ...newFlights]);
+              setMeshFlights?.((prev) => [...prev, ...newFlights]);
               addToast(
                 `${newFlights.length} voos importados da Planilha Google!`,
                 "success",

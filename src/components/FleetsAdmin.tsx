@@ -579,7 +579,7 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
                   {COLUMNS.map((col, colIndex) => {
                     const isEditing = editingCell?.rowId === v.id && editingCell?.col === colIndex;
                     const isFocused = focusedCell?.rowId === v.id && focusedCell?.col === colIndex;
-                    const value = v[col.key] as string | number;
+                    const value = (v as any)[col.key] as string | number;
 
                     const baseCellClasses = `h-10 px-3 border-r last:border-r-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'} relative align-middle`;
                     const focusClasses = isFocused ? `ring-2 ring-indigo-500 ring-inset z-20 ${isDarkMode ? 'bg-indigo-900/20' : 'bg-indigo-50/50'}` : '';

@@ -216,7 +216,7 @@ export const ShiftOperatorsSection: React.FC<ShiftOperatorsSectionProps> = ({
                 return { 
                     ...f, 
                     fleet: vehicleId,
-                    fleetType: vehicleId?.startsWith('CTA') ? 'CTA' : vehicleId?.startsWith('SRV') ? 'SRV' : undefined
+                    fleetType: (vehicleId?.startsWith('CTA') ? 'CTA' : vehicleId?.startsWith('SRV') ? 'SRV' : undefined) as "CTA" | "SRV" | undefined
                 };
             }
             if (unassignedWarName && f.operator === unassignedWarName) {

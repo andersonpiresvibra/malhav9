@@ -36,7 +36,7 @@ export const FleetSelectDropdown: React.FC<FleetSelectDropdownProps> = ({
     );
 
     const selectedVehicle = vehicles.find(v => v.id === value);
-    const displayValue = selectedVehicle?.fleet_number || value || 'N/A';
+    const displayValue = selectedVehicle?.id || value || 'N/A';
 
     return (
         <div className={`relative w-full ${disabled || isPaused ? 'opacity-50 pointer-events-none' : ''}`} ref={dropdownRef}>
@@ -84,7 +84,7 @@ export const FleetSelectDropdown: React.FC<FleetSelectDropdownProps> = ({
                                      : (isDarkMode ? 'hover:bg-slate-700 text-slate-300' : 'hover:bg-slate-100 text-slate-700')
                                }`}
                            >
-                               {v.fleet_number || v.id}
+                               {v.id}
                            </div>
                         ))
                     )}

@@ -295,7 +295,7 @@ export const Aerodromo: React.FC<AerodromoProps> = ({
         {viewMode === 'GRID' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-24 auto-rows-fr">
             {displayedPositions.map(posId => {
-              const flight = positionData.get(posId);
+              const flight = positionData.get(posId) as any;
               const externalFlight = externalSnapshot.get(posId);
               
               // Se existe no snapshot externo mas não na nossa malha, é "Terceiro"
@@ -316,7 +316,7 @@ export const Aerodromo: React.FC<AerodromoProps> = ({
               
               const displayFlightNum = isThirdParty ? externalFlight.flightNumber : ((flight?.flightNumber && flight.flightNumber !== '--') ? flight.flightNumber : (flight?.departureFlightNumber || '--'));
               
-              const isLivre = isFinished && flight?.operator && !busyOperators.has(flight.operator);
+              const isLivre = !!(isFinished && flight?.operator && !busyOperators.has(flight.operator));
               
               // We consider it visually occupied by a flight if there's an external flight or our flight is NOT finished
               const isVisuallyOccupied = isThirdParty ? isOccupied : (isOccupied && !isFinished);
@@ -491,13 +491,13 @@ export const Aerodromo: React.FC<AerodromoProps> = ({
                     </thead>
                     <tbody className="divide-y divide-slate-800/20">
                         {displayedPositions.map(posId => {
-                            const flight = positionData.get(posId);
+                            const flight = positionData.get(posId) as any;
                             const externalFlight = externalSnapshot.get(posId);
                             const isThirdParty = externalFlight && (!flight || (flight.registration !== externalFlight.registration && flight.flightNumber !== externalFlight.flightNumber));
                             const isConflict = flight && externalFlight && isThirdParty;
 
                             const isFinished = flight?.status === FlightStatus.FINALIZADO || flight?.status === FlightStatus.CANCELADO;
-                            const isLivre = isFinished && flight?.operator && !busyOperators.has(flight.operator);
+                            const isLivre = !!(isFinished && flight?.operator && !busyOperators.has(flight.operator));
                             const isOccupied = !!flight || !!externalFlight;
                             const isVisuallyOccupied = isThirdParty ? isOccupied : (isOccupied && !isFinished);
 

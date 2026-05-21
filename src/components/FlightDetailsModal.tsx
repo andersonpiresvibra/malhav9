@@ -212,7 +212,7 @@ export const FlightDetailsModal: React.FC<FlightDetailsModalProps> = ({ flight, 
       });
   }, [flight.positionId]);
 
-  useOnClickOutside(designationRef, () => {
+  useOnClickOutside(designationRef as any, () => {
     setShowOperatorList(false);
     setShowSupportOperatorList(false);
   });

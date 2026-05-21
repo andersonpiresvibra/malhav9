@@ -484,12 +484,12 @@ const App: React.FC = () => {
         const worksheet = XLSX.utils.json_to_sheet(finishedFlights.map(f => ({
             Voo: f.airline + ' ' + f.flightNumber,
             VooChegada: f.departureFlightNumber,
-            Prefixo: f.prefix,
+            Prefixo: f.registration,
             Destino: f.destination,
             Status: f.status,
             Inicio: f.startTime ? new Date(f.startTime).toLocaleTimeString('pt-BR') : '',
             Fim: f.endTime ? new Date(f.endTime).toLocaleTimeString('pt-BR') : '',
-            Operadores: f.assignedOperatorsNames ? f.assignedOperatorsNames.join(', ') : '',
+            Operadores: [f.operator, f.supportOperator].filter(Boolean).join(', '),
             Equipamento: f.fleet || ''
         })));
         const workbook = XLSX.utils.book_new();
@@ -697,7 +697,7 @@ const App: React.FC = () => {
   if (authLoading) {
     return (
       <div className={`${isDarkMode ? 'dark bg-slate-950' : 'bg-slate-50'} min-h-screen flex items-center justify-center`}>
-        <Spinner size="lg" className="text-blue-500" />
+        <Spinner size={40} className="text-blue-500" />
       </div>
     );
   }

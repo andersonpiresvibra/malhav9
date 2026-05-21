@@ -11,6 +11,7 @@ interface OperatorCellProps {
   operators?: OperatorProfile[];
   size?: 'sm' | 'md' | 'lg' | 'xl';
   isLivre?: boolean;
+  isDarkMode?: boolean;
 }
 
 export const OperatorCell: React.FC<OperatorCellProps> = ({ 

@@ -176,7 +176,7 @@ export const AerodromoAdmin: React.FC<AerodromoAdminProps> = ({
 
     setPositionsMetadata(prev => ({
        ...prev,
-       [newPos.id]: { type: newPos.type }
+       [newPos.id]: { type: newPos.type, patio: newPos.patio } as any
     }));
 
     setPatioPositions(prev => ({
@@ -424,7 +424,7 @@ export const AerodromoAdmin: React.FC<AerodromoAdminProps> = ({
                        </button>
                     </div>
                     {hasFlight ? (
-                      <AlertCircle size={10} className="text-amber-500" title="Ocupado" />
+                      <span title="Ocupado"><AlertCircle size={10} className="text-amber-500" /></span>
                     ) : (
                       <button 
                         onClick={() => handleDeletePosition(posId)}

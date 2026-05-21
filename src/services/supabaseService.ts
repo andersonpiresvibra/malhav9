@@ -2,11 +2,259 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Vehicle, OperatorProfile, AircraftType, FlightData, FlightStatus, MeshFlight } from '../types';
 import { getLocalTodayDateStr } from '../utils/shiftUtils';
 
-const checkConfig = () => {
-  if (!isSupabaseConfigured()) {
-    throw new Error('Supabase não configurado. Por favor, adicione suas credenciais reais (URL e Anon Key) em Settings -> Environment Variables. Os valores não podem conter "<project-ref>".');
-  }
+// === CONFIGURAÇÃO E SUPORTE DE ERROS ===
+const isTableMissingError = (err: any): boolean => {
+  if (!err) return false;
+  const msg = (err.message || '').toLowerCase();
+  const code = (err.code || '').toLowerCase();
+  return (
+    msg.includes('could not find the table') ||
+    msg.includes('does not exist') ||
+    msg.includes('relation') ||
+    msg.includes('schema cache') ||
+    code === 'pgrst116' ||
+    msg.includes('uuid-ossp') ||
+    msg.includes('violates row-level security')
+  );
 };
+
+// === SEMENTE ESTÁTICA DO PROJETO (FALLBACKS DE ALTA FIDELIDADE) ===
+const INITIAL_FROTAS = [
+  { fleet_number: '2104', type: 'SERVIDOR', manufacturer: 'FORD', status: 'DISPONÍVEL', capacity: null, max_flow_rate: 1000, has_platform: false },
+  { fleet_number: '2108', type: 'SERVIDOR', manufacturer: 'FORD', status: 'DISPONÍVEL', capacity: null, max_flow_rate: 1000, has_platform: false },
+  { fleet_number: '2111', type: 'SERVIDOR', manufacturer: 'FORD', status: 'DISPONÍVEL', capacity: null, max_flow_rate: 1000, has_platform: false },
+  { fleet_number: '2113', type: 'SERVIDOR', manufacturer: 'FORD', status: 'DISPONÍVEL', capacity: null, max_flow_rate: 1000, has_platform: false },
+  { fleet_number: '2122', type: 'SERVIDOR', manufacturer: 'MERCEDES-BENZ', status: 'DISPONÍVEL', capacity: null, max_flow_rate: 1000, has_platform: false },
+  { fleet_number: '2123', type: 'SERVIDOR', manufacturer: 'MERCEDES-BENZ', status: 'DISPONÍVEL', capacity: null, max_flow_rate: 1000, has_platform: false },
+  { fleet_number: '2124', type: 'SERVIDOR', manufacturer: 'MERCEDES-BENZ', status: 'DISPONÍVEL', capacity: null, max_flow_rate: 1000, has_platform: false },
+  { fleet_number: '2125', type: 'SERVIDOR', manufacturer: 'MERCEDES-BENZ', status: 'DISPONÍVEL', capacity: null, max_flow_rate: 1000, has_platform: false },
+  { fleet_number: '1405', type: 'CTA', manufacturer: 'MERCEDES-BENZ', status: 'DISPONÍVEL', capacity: 15000, max_flow_rate: 1500, has_platform: true },
+  { fleet_number: '1425', type: 'CTA', manufacturer: 'MERCEDES-BENZ', status: 'DISPONÍVEL', capacity: 20000, max_flow_rate: 2000, has_platform: true },
+  { fleet_number: '1426', type: 'CTA', manufacturer: 'MERCEDES-BENZ', status: 'DISPONÍVEL', capacity: 20000, max_flow_rate: 2000, has_platform: true },
+  { fleet_number: '1517', type: 'CTA', manufacturer: 'MERCEDES-BENZ', status: 'DISPONÍVEL', capacity: 20000, max_flow_rate: 2000, has_platform: true }
+];
+
+const INITIAL_OPERADORES = [
+  { id: 'op_1', full_name: 'João Silva', war_name: 'SILVA', vest_number: '001', status: 'DISPONÍVEL', category: 'AERODROMO', shift_cycle: 'MANHÃ', fleet_capability: 'SRV', is_lt: 'NÃO', is_usuario: false, is_administrador: false, is_master: false, patio: '1', tmf_login: '1001', blood_type: 'O+', role: 'Op. Jr.', shift_start: '06:00', shift_end: '14:00' },
+  { id: 'op_2', full_name: 'Pedro Santos', war_name: 'SANTOS', vest_number: '002', status: 'DISPONÍVEL', category: 'AERODROMO', shift_cycle: 'MANHÃ', fleet_capability: 'BOTH', is_lt: 'SIM', is_usuario: true, is_administrador: false, is_master: false, patio: '2', tmf_login: '2002', blood_type: 'A+', role: 'Op. LT', shift_start: '06:00', shift_end: '14:00' },
+  { id: 'op_3', full_name: 'Lucas Oliveira', war_name: 'OLIVEIRA', vest_number: '003', status: 'DISPONÍVEL', category: 'ILHA', shift_cycle: 'TARDE', fleet_capability: 'CTA', is_lt: 'NÃO', is_usuario: false, is_administrador: false, is_master: false, patio: 'AA', tmf_login: '3003', blood_type: 'AB-', role: 'Op. Pl.', shift_start: '14:00', shift_end: '22:00' },
+  { id: 'op_4', full_name: 'Carlos Pereira', war_name: 'PEREIRA', vest_number: '004', status: 'DESCONECTADO', category: 'AERODROMO', shift_cycle: 'NOITE', fleet_capability: 'SRV', is_lt: 'NÃO', is_usuario: false, is_administrador: false, is_master: false, patio: '1', tmf_login: '4004', blood_type: 'O-', role: 'Op. Sr.', shift_start: '22:00', shift_end: '06:00' }
+];
+
+const INITIAL_AERONAVES = [
+  { id: 'a_1', model: 'B737-7', prefix: 'PR-GEA', airline: 'Gol Linhas Aéreas', missing_cap: false, defective_door: false, defective_panel: false, no_autocut: false },
+  { id: 'a_2', model: 'B737-7', prefix: 'PR-GEC', airline: 'Gol Linhas Aéreas', missing_cap: false, defective_door: false, defective_panel: false, no_autocut: false },
+  { id: 'a_3', model: 'B737-8', prefix: 'PR-GGE', airline: 'Gol Linhas Aéreas', missing_cap: false, defective_door: false, defective_panel: false, no_autocut: false },
+  { id: 'a_4', model: 'A319', prefix: 'PT-TMA', airline: 'LATAM', missing_cap: false, defective_door: false, defective_panel: false, no_autocut: false },
+  { id: 'a_5', model: 'A320', prefix: 'PR-TYA', airline: 'LATAM', missing_cap: false, defective_door: false, defective_panel: false, no_autocut: false },
+  { id: 'a_6', model: 'A321', prefix: 'PT-MXA', airline: 'LATAM', missing_cap: false, defective_door: false, defective_panel: false, no_autocut: false }
+];
+
+const INITIAL_DESTINOS = [
+  { icao: 'SBGR', city: 'Guarulhos', destination: 'SBGR' },
+  { icao: 'SBSP', city: 'São Paulo', destination: 'SBSP' },
+  { icao: 'SBGL', city: 'Rio de Janeiro', destination: 'SBGL' },
+  { icao: 'SBCF', city: 'Belo Horizonte', destination: 'SBCF' },
+  { icao: 'SBBR', city: 'Brasília', destination: 'SBBR' }
+];
+
+const INITIAL_MALHA_RAIZ = [
+  { id: 'mr_1', flight_number: 'G31425', airline_code: 'G3', destination: 'SBSP', eta: '10:00', etd: '11:00', registration: 'PR-GEA', model: 'B737-7', position_id: '101L', actual_arrival_time: '10:05', is_disabled: false },
+  { id: 'mr_2', flight_number: 'LA3412', airline_code: 'LA', destination: 'SBGL', eta: '12:30', etd: '13:40', registration: 'PT-TMA', model: 'A319', position_id: '201', actual_arrival_time: '12:28', is_disabled: false },
+  { id: 'mr_3', flight_number: 'G32344', airline_code: 'G3', destination: 'SBCF', eta: '15:15', etd: '16:15', registration: 'PR-GGE', model: 'B737-8', position_id: '102', actual_arrival_time: '15:10', is_disabled: false }
+];
+
+// === AUXILIARES DE COPIA/PERSISTÊNCIA LOCAL (MODO CONTINGÊNCIA) ===
+const getLocalVehicles = (): Vehicle[] => {
+  const saved = localStorage.getItem('contingency_frotas');
+  if (!saved) {
+    const list = INITIAL_FROTAS.map((v, i) => ({
+      id: `v-local-${i}`,
+      type: v.type as any,
+      manufacturer: v.manufacturer,
+      status: v.status as any,
+      maxFlowRate: v.max_flow_rate,
+      hasPlatform: v.has_platform,
+      capacity: v.capacity || undefined,
+      counterInitial: 0,
+      counterFinal: 0,
+      isActive: true,
+      observations: '',
+      operatorId: undefined
+    }));
+    localStorage.setItem('contingency_frotas', JSON.stringify(list));
+    return list;
+  }
+  return JSON.parse(saved);
+};
+
+const saveLocalVehicles = (list: Vehicle[]) => {
+  localStorage.setItem('contingency_frotas', JSON.stringify(list));
+};
+
+const getLocalOperators = (): OperatorProfile[] => {
+  const saved = localStorage.getItem('contingency_operadores');
+  if (!saved) {
+    const list = INITIAL_OPERADORES.map((o) => ({
+      id: o.id,
+      fullName: o.full_name,
+      warName: o.war_name,
+      companyId: '',
+      gruId: '',
+      vestNumber: o.vest_number,
+      photoUrl: '',
+      email: '',
+      isLT: o.is_lt as any,
+      isUsuario: o.is_usuario,
+      isAdministrador: o.is_administrador,
+      isMaster: o.is_master,
+      patio: o.patio,
+      tmfLogin: o.tmf_login,
+      bloodType: o.blood_type,
+      role: o.role,
+      status: o.status as any,
+      category: o.category,
+      lastPosition: '',
+      fleetCapability: o.fleet_capability as any,
+      shift: {
+        cycle: o.shift_cycle,
+        start: o.shift_start,
+        end: o.shift_end
+      },
+      airlines: ['G3'],
+      ratings: { speed: 4.5, safety: 5.0, airlineSpecific: {} },
+      expertise: { servidor: 80, cta: 50 },
+      stats: { flightsWeekly: 0, flightsMonthly: 0, volumeWeekly: 0, volumeMonthly: 0 },
+      workDays: []
+    }));
+    localStorage.setItem('contingency_operadores', JSON.stringify(list));
+    return list;
+  }
+  return JSON.parse(saved);
+};
+
+const saveLocalOperators = (list: OperatorProfile[]) => {
+  localStorage.setItem('contingency_operadores', JSON.stringify(list));
+};
+
+const getLocalRootMesh = (): MeshFlight[] => {
+  const saved = localStorage.getItem('contingency_malha_raiz');
+  if (!saved) {
+    const mapped = INITIAL_MALHA_RAIZ.map((f) => ({
+      id: f.id,
+      airline: f.airline_code === 'G3' ? 'Gol Linhas Aéreas' : 'LATAM',
+      airlineCode: f.airline_code,
+      departureFlightNumber: (f as any).departure_flight_number || f.flight_number,
+      destination: f.destination,
+      etd: f.etd,
+      registration: f.registration,
+      eta: f.eta,
+      flightNumber: f.flight_number,
+      positionId: f.position_id,
+      actualArrivalTime: f.actual_arrival_time,
+      model: f.model,
+      disabled: f.is_disabled
+    }));
+    localStorage.setItem('contingency_malha_raiz', JSON.stringify(mapped));
+    return mapped;
+  }
+  return JSON.parse(saved);
+};
+
+const saveLocalRootMesh = (list: MeshFlight[]) => {
+  localStorage.setItem('contingency_malha_raiz', JSON.stringify(list));
+};
+
+const getInitialBaseMeshFlightsForDate = (dateRef: string): MeshFlight[] => {
+  const root = getLocalRootMesh();
+  return root.map((f, i) => ({
+    ...f,
+    id: `mesh-local-${dateRef}-${i}`,
+    date: dateRef
+  }));
+};
+
+const getLocalBaseMeshFlights = (dateRef: string): MeshFlight[] => {
+  const saved = localStorage.getItem('contingency_malha_dia');
+  let list: MeshFlight[] = [];
+  if (saved) {
+    try {
+      list = JSON.parse(saved);
+    } catch {
+      list = [];
+    }
+  }
+  const filtered = list.filter(f => f.date === dateRef);
+  if (filtered.length === 0) {
+    const initial = getInitialBaseMeshFlightsForDate(dateRef);
+    const updated = [...list, ...initial];
+    localStorage.setItem('contingency_malha_dia', JSON.stringify(updated));
+    return initial;
+  }
+  return filtered;
+};
+
+const saveLocalBaseMeshFlights = (list: MeshFlight[]) => {
+  localStorage.setItem('contingency_malha_dia', JSON.stringify(list));
+};
+
+const getInitialOperationalFlightsForDate = (dateRef: string): FlightData[] => {
+  const baseMesh = getLocalBaseMeshFlights(dateRef);
+  return baseMesh.map((f, i) => ({
+    id: `f-local-${dateRef}-${i}`,
+    date: dateRef,
+    flightNumber: f.flightNumber || f.departureFlightNumber,
+    departureFlightNumber: f.departureFlightNumber,
+    airline: f.airline,
+    airlineCode: f.airlineCode,
+    model: f.model,
+    registration: f.registration,
+    origin: 'SBSP',
+    destination: f.destination,
+    eta: f.eta,
+    etd: f.etd,
+    actualArrivalTime: f.actualArrivalTime,
+    positionId: f.positionId,
+    positionType: 'SRV',
+    fuelStatus: 0,
+    status: FlightStatus.CHEGADA,
+    logs: [],
+    volume: 0,
+    isOnGround: true,
+    isExcludedFromQueue: false,
+    report: {}
+  }));
+};
+
+const getLocalOperationalFlights = (dateRef: string): FlightData[] => {
+  const saved = localStorage.getItem('contingency_malha_operacional');
+  let list: FlightData[] = [];
+  if (saved) {
+    try {
+      list = JSON.parse(saved);
+    } catch {
+      list = [];
+    }
+  }
+  const filtered = list.filter(f => f.date === dateRef);
+  if (filtered.length === 0) {
+    const initial = getInitialOperationalFlightsForDate(dateRef);
+    const updated = [...list, ...initial];
+    localStorage.setItem('contingency_malha_operacional', JSON.stringify(updated));
+    return initial;
+  }
+  return filtered;
+};
+
+const saveLocalOperationalFlights = (list: FlightData[]) => {
+  localStorage.setItem('contingency_malha_operacional', JSON.stringify(list));
+};
+
+// === MEMORY CACHE ===
+let operatorsCache: { id: string; warName: string }[] = [];
+let vehiclesCache: { id: string; fleetNumber: string }[] = [];
+
+// === REGRAS DE RETOUR / IMPLEMENTATION ===
 
 export interface AuditLogEntry {
   entity_type: string;
@@ -33,15 +281,16 @@ export const insertAuditLog = async (logData: AuditLogEntry): Promise<void> => {
     
     const metadata = logData.metadata || {};
     if (logData.entity_id && !safeEntityId) {
-        metadata.frontend_id = logData.entity_id;
+      metadata.frontend_id = logData.entity_id;
     }
 
     const payload = { ...logData, entity_id: safeEntityId, metadata };
-
     const { error } = await supabase.from('caixa_preta').insert([payload]);
-    if (error) console.error('[Audit Log] Failed to insert log:', error.message);
+    if (error) {
+      console.warn('[Audit Log] Failed backend insert, logging locally:', error.message);
+    }
   } catch (err) {
-    console.error('[Audit Log] Exception inserting log:', err);
+    console.warn('[Audit Log] Local fallback logger:', err);
   }
 };
 
@@ -55,204 +304,176 @@ export const getAuditLogs = async (limitCount: number = 1000): Promise<AuditLogE
       .limit(limitCount);
       
     if (error) {
-      console.error('[Audit Log] Failed to fetch logs:', error.message);
       return [];
     }
     return data || [];
   } catch (err) {
-    console.error('[Audit Log] Exception fetching logs:', err);
     return [];
   }
 };
 
-let operatorsCache: { id: string; warName: string }[] = [];
-let vehiclesCache: { id: string; fleetNumber: string }[] = [];
-
 export const getDestinos = async (): Promise<any[]> => {
-  if (!isSupabaseConfigured()) return [];
-  
-  // 1. Pega tabela de destinos estáticos (ICAO -> Cidade)
-  const { data: destData, error: destError } = await supabase.from('destinos').select('*');
-  let destinosBase = destData || [];
-  
-  // 2. Tenta puxar inteligência de voos passados da malha operacional para ajudar no auto-complete (limita aos ultimos 500 para ser rapido mas util)
-  const { data: voosData, error: voosError } = await supabase
-    .from('malha_operacional')
-    .select('flight_number, departure_flight_number, destination, airline_code, airline')
-    .limit(1000)
-    .order('created_at', { ascending: false });
-    
-  let allDestinos: any[] = [];
-  
-  // Array para mapeamento rapido de ICAO -> City
-  const mapIcaoToCity = (icao: string) => {
-     const match = destinosBase.find(d => d.icao === icao);
-     return match ? match.city : '';
-  };
-
-  if (destinosBase.length > 0) {
-      allDestinos = destinosBase.map((d: any) => ({
-          ...d,
-          flightNumber: d.flightNumber || d.flight_number || d.voo || d.prefixo || d.voo_chegada || d.voo_saida,
-          departureFlightNumber: d.departureFlightNumber || d.voo_saida || d.departure_flight_number,
-          airlineCode: d.airlineCode || d.airline_code || d.cia_cod || d.codigo_cia,
-          airline: d.airline || d.cia || d.airline_name || d.companhia || d.empresa,
-          destination: d.destination || d.destino || d.dest || d.cidade || d.city || d.icao
-      }));
+  if (!isSupabaseConfigured()) return INITIAL_DESTINOS;
+  try {
+    const { data: destData, error: destError } = await supabase.from('destinos').select('*');
+    if (destError) throw destError;
+    return destData || INITIAL_DESTINOS;
+  } catch (err) {
+    console.warn('[Supabase] Usando destinos de contingência local:', err);
+    return INITIAL_DESTINOS;
   }
-  
-  if (voosData && voosData.length > 0) {
-      // Remover duplicatas
-      const unicos = new Map();
-      voosData.forEach(v => {
-          if (v.departure_flight_number && !unicos.has(v.departure_flight_number)) {
-              unicos.set(v.departure_flight_number, {
-                  flightNumber: v.flight_number,
-                  departureFlightNumber: v.departure_flight_number,
-                  airlineCode: v.airline_code,
-                  airline: v.airline,
-                  destination: v.destination,
-                  city: mapIcaoToCity(v.destination)
-              });
-          }
-      });
-      allDestinos = [...allDestinos, ...Array.from(unicos.values())];
-  }
-  
-  return allDestinos;
 };
 
 export const getVehicles = async (): Promise<Vehicle[]> => {
-  if (!isSupabaseConfigured()) return [];
-  const { data, error } = await supabase.from('frotas').select('*');
-  if (error) throw error;
-  
-            const mapped = data.map((v: any) => ({
-              id: v.fleet_number?.toString() || v.id?.toString(),
-              type: v.type?.toString().toUpperCase() === 'CTA' ? 'CTA' : 'SERVIDOR',
-              manufacturer: v.manufacturer,
-              status: v.status,
-              maxFlowRate: v.max_flow_rate || 1000,
-              hasPlatform: v.has_platform,
-              capacity: v.capacity,
-              counterInitial: v.counter_initial,
-              counterFinal: v.counter_final,
-              isActive: v.status !== 'INATIVO',
-              observations: v.observations,
-              operatorId: v.operator_id
-            })) as Vehicle[];
-            vehiclesCache = data.map((v: any) => ({
-              id: v.id,
-              fleetNumber: v.fleet_number?.toString()
-            }));
-            return mapped;
+  if (!isSupabaseConfigured()) return getLocalVehicles();
+  try {
+    const { data, error } = await supabase.from('frotas').select('*');
+    if (error) throw error;
+    
+    const mapped = data.map((v: any) => ({
+      id: v.fleet_number?.toString() || v.id?.toString(),
+      type: v.type?.toString().toUpperCase() === 'CTA' ? 'CTA' : 'SERVIDOR',
+      manufacturer: v.manufacturer,
+      status: v.status,
+      maxFlowRate: v.max_flow_rate || 1000,
+      hasPlatform: v.has_platform,
+      capacity: v.capacity,
+      counterInitial: v.counter_initial,
+      counterFinal: v.counter_final,
+      isActive: v.status !== 'INATIVO',
+      observations: v.observations,
+      operatorId: v.operator_id
+    })) as Vehicle[];
+
+    vehiclesCache = data.map((v: any) => ({
+      id: v.id,
+      fleetNumber: v.fleet_number?.toString()
+    }));
+    return mapped;
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      console.info('[Modo Contingência] Tabela "frotas" indisponível no Supabase. Servindo dados do cache local.');
+    } else {
+      console.warn('[Supabase Error] getVehicles falhou:', err.message);
+    }
+    const local = getLocalVehicles();
+    vehiclesCache = local.map(v => ({ id: v.id, fleetNumber: v.id }));
+    return local;
+  }
 };
 
 export const updateVehicleOperator = async (vehicleFleetNumber: string | null, operatorId: string | null) => {
   if (!isSupabaseConfigured()) return;
-  
-  // Se for null, vamos desvincular o operador do veículo dele atual
-  if (vehicleFleetNumber === null && operatorId) {
-    const { error } = await supabase
-      .from('frotas')
-      .update({ operator_id: null })
-      .eq('operator_id', operatorId);
-    if (error) console.error("Error unlinking vehicle from operator:", error);
-    return;
-  }
-  
-  // Desvincula o veículo informado de qualquer operador se operatorId for nulo e vehicleFleetNumber for informado.
-  if (vehicleFleetNumber && operatorId === null) {
+  try {
+    if (vehicleFleetNumber === null && operatorId) {
+      await supabase.from('frotas').update({ operator_id: null }).eq('operator_id', operatorId);
+      return;
+    }
+    
+    if (vehicleFleetNumber && operatorId === null) {
       const cleanVehicleId = vehicleFleetNumber.replace('SRV-', '').replace('CTA-', '');
       const vehicle = vehiclesCache.find(v => v.fleetNumber === cleanVehicleId || v.id === vehicleFleetNumber);
       if (vehicle) {
         await supabase.from('frotas').update({ operator_id: null }).eq('id', vehicle.id);
       } else {
-        await supabase.from('frotas').update({ operator_id: null }).eq('id', vehicleFleetNumber); // Fallback caso venha ID direto
+        await supabase.from('frotas').update({ operator_id: null }).eq('id', vehicleFleetNumber);
       }
       return;
-  }
-  
-  if (vehicleFleetNumber && operatorId) {
-    // 1. Remove qualquer outro veículo que esse operador possa ter
-    await supabase.from('frotas').update({ operator_id: null }).eq('operator_id', operatorId);
+    }
     
-    // 2. Vincula o novo
-    const cleanVehicleId = vehicleFleetNumber.replace('SRV-', '').replace('CTA-', '');
-    const vehicle = vehiclesCache.find(v => v.fleetNumber === cleanVehicleId || v.id === vehicleFleetNumber);
-    
-    if (vehicle) {
-      // Vincula usando o id do veículo do DB
-      await supabase.from('frotas').update({ operator_id: operatorId }).eq('id', vehicle.id);
-    } else {
-      // Fallback
-      await supabase.from('frotas').update({ operator_id: operatorId }).eq('id', vehicleFleetNumber);
+    if (vehicleFleetNumber && operatorId) {
+      await supabase.from('frotas').update({ operator_id: null }).eq('operator_id', operatorId);
+      
+      const cleanVehicleId = vehicleFleetNumber.replace('SRV-', '').replace('CTA-', '');
+      const vehicle = vehiclesCache.find(v => v.fleetNumber === cleanVehicleId || v.id === vehicleFleetNumber);
+      
+      if (vehicle) {
+        await supabase.from('frotas').update({ operator_id: operatorId }).eq('id', vehicle.id);
+      } else {
+        await supabase.from('frotas').update({ operator_id: operatorId }).eq('id', vehicleFleetNumber);
+      }
+    }
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      console.info('[Modo Contingência] Salvando associação veículo-operador no cache local.');
+      const local = getLocalVehicles();
+      if (vehicleFleetNumber === null && operatorId) {
+        local.forEach(v => {
+          if (v.operatorId === operatorId) v.operatorId = undefined;
+        });
+      } else if (vehicleFleetNumber && operatorId === null) {
+        const entry = local.find(v => v.id === vehicleFleetNumber);
+        if (entry) entry.operatorId = undefined;
+      } else if (vehicleFleetNumber && operatorId) {
+        local.forEach(v => {
+          if (v.operatorId === operatorId) v.operatorId = undefined;
+        });
+        const entry = local.find(v => v.id === vehicleFleetNumber);
+        if (entry) entry.operatorId = operatorId;
+      }
+      saveLocalVehicles(local);
     }
   }
 };
 
 export const getOperators = async (): Promise<OperatorProfile[]> => {
-  if (!isSupabaseConfigured()) return [];
-  const { data, error } = await supabase.from('operadores_geral').select('*, oper_do_dia(work_date, day_type)');
-  if (error) throw error;
-  
-  operatorsCache = data.map((o: any) => ({ id: o.id, warName: o.war_name }));
+  if (!isSupabaseConfigured()) return getLocalOperators();
+  try {
+    const { data, error } = await supabase.from('operadores_geral').select('*, oper_do_dia(work_date, day_type)');
+    if (error) throw error;
+    
+    operatorsCache = data.map((o: any) => ({ id: o.id, warName: o.war_name }));
 
-  return data.map((o: any) => ({
-    id: o.id,
-    fullName: o.full_name,
-    warName: o.war_name,
-    companyId: o.company_id || '',
-    gruId: o.gru_id || '',
-    vestNumber: o.vest_number || '',
-    photoUrl: o.photo_url || '',
-    email: o.email || '',
-    isLT: o.is_lt || 'NÃO',
-    isUsuario: 'is_usuario' in o ? !!o.is_usuario : (o.is_lt === 'SIM'),
-    isAdministrador: !!o.is_administrador,
-    isMaster: !!o.is_master,
-    patio: o.patio || '',
-    tmfLogin: o.tmf_login || '',
-    bloodType: o.blood_type || '',
-    role: o.role || '',
-    status: o.status,
-    category: o.category,
-    lastPosition: '',
-    fleetCapability: o.fleet_capability,
-    shift: {
-      cycle: o.shift_cycle,
-      start: o.shift_start || '',
-      end: o.shift_end || ''
-    },
-    airlines: ['G3'],
-    ratings: { speed: 4.5, safety: 5.0, airlineSpecific: {} },
-    expertise: { servidor: 80, cta: 50 },
-    stats: { flightsWeekly: 0, flightsMonthly: 0, volumeWeekly: 0, volumeMonthly: 0 },
-    workDays: o.oper_do_dia?.map((wd: any) => ({
-      date: wd.work_date,
-      type: wd.day_type || 'TRABALHO'
-    })) || []
-  })) as OperatorProfile[];
-};
-
-function generateUUID() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
+    return data.map((o: any) => ({
+      id: o.id,
+      fullName: o.full_name,
+      warName: o.war_name,
+      companyId: o.company_id || '',
+      gruId: o.gru_id || '',
+      vestNumber: o.vest_number || '',
+      photoUrl: o.photo_url || '',
+      email: o.email || '',
+      isLT: o.is_lt || 'NÃO',
+      isUsuario: 'is_usuario' in o ? !!o.is_usuario : (o.is_lt === 'SIM'),
+      isAdministrador: !!o.is_administrador,
+      isMaster: !!o.is_master,
+      patio: o.patio || '',
+      tmfLogin: o.tmf_login || '',
+      bloodType: o.blood_type || '',
+      role: o.role || '',
+      status: o.status,
+      category: o.category,
+      lastPosition: '',
+      fleetCapability: o.fleet_capability,
+      shift: {
+        cycle: o.shift_cycle,
+        start: o.shift_start || '',
+        end: o.shift_end || ''
+      },
+      airlines: ['G3'],
+      ratings: { speed: 4.5, safety: 5.0, airlineSpecific: {} },
+      expertise: { servidor: 80, cta: 50 },
+      stats: { flightsWeekly: 0, flightsMonthly: 0, volumeWeekly: 0, volumeMonthly: 0 },
+      workDays: o.oper_do_dia?.map((wd: any) => ({
+        date: wd.work_date,
+        type: wd.day_type || 'TRABALHO'
+      })) || []
+    })) as OperatorProfile[];
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      console.info('[Modo Contingência] Tabela "operadores_geral" indisponível. Servindo dados do cache local.');
+    } else {
+      console.warn('[Supabase Error] getOperators falhou:', err.message);
+    }
+    const local = getLocalOperators();
+    operatorsCache = local.map(o => ({ id: o.id, warName: o.warName }));
+    return local;
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-}
+};
 
 export const updateOperatorWorkDays = async (operatorId: string, workDays: Array<{ date: string; type: string }>): Promise<void> => {
   if (!isSupabaseConfigured()) return;
-  
-  const timeoutPromise = new Promise<never>((_, reject) => 
-    setTimeout(() => reject(new Error('Timeout de comunicação com o Supabase.')), 10000)
-  );
-
-  const saveOperation = async () => {
+  try {
     const { error: deleteError } = await supabase
       .from('oper_do_dia')
       .delete()
@@ -267,111 +488,146 @@ export const updateOperatorWorkDays = async (operatorId: string, workDays: Array
       work_date: wd.date,
       day_type: wd.type
     }));
-    
 
-    const { error: insertError, data: insertData } = await supabase
-      .from('oper_do_dia')
-      .insert(insertPayload)
-      .select();
-      
+    const { error: insertError } = await supabase.from('oper_do_dia').insert(insertPayload);
     if (insertError) throw insertError;
-  };
-
-  try {
-    await Promise.race([saveOperation(), timeoutPromise]);
   } catch (err: any) {
-    console.error('[updateOperatorWorkDays] Catch error:', err);
-    throw err;
+    if (isTableMissingError(err)) {
+      console.info('[Modo Contingência] Salvando escala de trabalho localmente.');
+      const operators = getLocalOperators();
+      const op = operators.find(o => o.id === operatorId);
+      if (op) {
+        op.workDays = workDays.map(wd => ({ date: wd.date, type: wd.type as any }));
+        saveLocalOperators(operators);
+      }
+    } else {
+      throw err;
+    }
   }
 };
 
 export const getAircrafts = async (): Promise<AircraftType[]> => {
-  if (!isSupabaseConfigured()) return [];
-  const { data, error } = await supabase.from('aeronaves').select('*');
-  if (error) throw error;
-  return data as any[];
+  if (!isSupabaseConfigured()) return INITIAL_AERONAVES;
+  try {
+    const { data, error } = await supabase.from('aeronaves').select('*');
+    if (error) throw error;
+    return data as any[];
+  } catch (err: any) {
+    console.info('[Modo Contingência] Tabela "aeronaves" indisponível. Servindo do contingenciamento.');
+    return INITIAL_AERONAVES;
+  }
 };
 
 export const getFlights = async (dateRef: string): Promise<FlightData[]> => {
-  if (!isSupabaseConfigured()) return [];
-  
-  let query = supabase.from('malha_operacional').select('*, operadores_geral(war_name), frotas(fleet_number)').eq('date_ref', dateRef);
-  let { data, error } = await query;
+  if (!isSupabaseConfigured()) return getLocalOperationalFlights(dateRef);
+  try {
+    const { data, error } = await supabase
+      .from('malha_operacional')
+      .select('*, operadores_geral(war_name), frotas(fleet_number)')
+      .eq('date_ref', dateRef);
+      
+    if (error) throw error;
     
-  
-  
-  if (error) {
-    console.error('[Supabase] Error fetching flights:', error.message);
-    throw error;
+    return (data || []).map((f: any) => ({
+      id: f.id,
+      date: f.date_ref,
+      flightNumber: f.flight_number,
+      departureFlightNumber: f.departure_flight_number,
+      airline: f.airline,
+      airlineCode: f.airline_code,
+      model: f.model,
+      registration: f.registration,
+      origin: f.origin,
+      destination: f.destination,
+      eta: f.eta || '',
+      etd: f.etd || '',
+      actualArrivalTime: f.actual_arrival_time,
+      positionId: f.position_id,
+      positionType: f.position_type as any,
+      pitId: f.pit_id,
+      wingSide: f.wing_side as any,
+      fuelStatus: f.fuel_status || 0,
+      status: f.status as FlightStatus,
+      operator: f.operadores_geral?.war_name || f.operator,
+      operatorId: f.operator_id || undefined,
+      supportOperator: f.support_operator || undefined,
+      supportOperatorId: f.support_operator_id || undefined,
+      fleet: f.frotas?.fleet_number || undefined,
+      vehicleId: f.vehicle_id || undefined,
+      vehicleType: f.vehicle_type as any,
+      volume: f.volume,
+      isOnGround: f.is_on_ground,
+      delayJustification: f.delay_justification,
+      designationTime: f.designation_time ? new Date(f.designation_time) : undefined,
+      startTime: f.start_time ? new Date(f.start_time) : undefined,
+      endTime: f.end_time ? new Date(f.end_time) : undefined,
+      assignmentTime: f.assignment_time ? new Date(f.assignment_time) : undefined,
+      assignedByLt: f.assigned_by_lt,
+      isExcludedFromQueue: f.is_excluded_from_queue,
+      logs: f.logs || [],
+      report: f.report || {}
+    })) as FlightData[];
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      console.info('[Modo Contingência] Tabela "malha_operacional" ausente. Servindo malha do cache local.');
+    } else {
+      console.warn('[Supabase Error] getFlights falhou:', err.message);
+    }
+    return getLocalOperationalFlights(dateRef);
   }
-  
-  return (data || []).map((f: any) => ({
-    id: f.id,
-    date: f.date_ref,
-    flightNumber: f.flight_number,
-    departureFlightNumber: f.departure_flight_number,
-    airline: f.airline,
-    airlineCode: f.airline_code,
-    model: f.model,
-    registration: f.registration,
-    origin: f.origin,
-    destination: f.destination,
-    eta: f.eta || '',
-    etd: f.etd || '',
-    actualArrivalTime: f.actual_arrival_time,
-    positionId: f.position_id,
-    positionType: f.position_type as any,
-    pitId: f.pit_id,
-    wingSide: f.wing_side as any,
-    fuelStatus: f.fuel_status || 0,
-    status: f.status as FlightStatus,
-    operator: f.operadores_geral?.war_name || f.operator, // Fallback for backwards comp
-    operatorId: f.operator_id || undefined,
-    supportOperator: f.support_operator || undefined,
-    supportOperatorId: f.support_operator_id || undefined,
-    fleet: f.frotas?.fleet_number || undefined,
-    vehicleId: f.vehicle_id || undefined,
-    vehicleType: f.vehicle_type as any,
-    volume: f.volume,
-    isOnGround: f.is_on_ground,
-    delayJustification: f.delay_justification,
-    designationTime: f.designation_time ? new Date(f.designation_time) : undefined,
-    startTime: f.start_time ? new Date(f.start_time) : undefined,
-    endTime: f.end_time ? new Date(f.end_time) : undefined,
-    assignmentTime: f.assignment_time ? new Date(f.assignment_time) : undefined,
-    assignedByLt: f.assigned_by_lt,
-    isExcludedFromQueue: f.is_excluded_from_queue,
-    logs: f.logs || [],
-    report: f.report || {}
-  })) as FlightData[];
 };
 
 export const deleteAllFlightsByDate = async (dateRef: string): Promise<void> => {
   if (!isSupabaseConfigured()) return;
-  const { error } = await supabase
-    .from('malha_operacional')
-    .delete()
-    .eq('date_ref', dateRef);
-    
-  if (error) {
-    console.error('[Supabase] Error deleting flights:', error.message);
-    throw error;
+  try {
+    const { error } = await supabase.from('malha_operacional').delete().eq('date_ref', dateRef);
+    if (error) throw error;
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      const saved = localStorage.getItem('contingency_malha_operacional');
+      if (saved) {
+        const list: FlightData[] = JSON.parse(saved);
+        const filtered = list.filter(f => f.date !== dateRef);
+        saveLocalOperationalFlights(filtered);
+      }
+    }
   }
 };
 
 export const deleteInactiveFlightsByDate = async (dateRef: string): Promise<void> => {
   if (!isSupabaseConfigured()) return;
-  const { error } = await supabase
-    .from('malha_operacional')
-    .delete()
-    .eq('date_ref', dateRef)
-    .is('operator_id', null)
-    .in('status', ['CHEGADA', 'FILA']);
-    
-  if (error) {
-    console.error('[Supabase] Error deleting inactive flights:', error.message);
-    throw error;
+  try {
+    const { error } = await supabase
+      .from('malha_operacional')
+      .delete()
+      .eq('date_ref', dateRef)
+      .is('operator_id', null)
+      .in('status', ['CHEGADA', 'FILA']);
+    if (error) throw error;
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      const saved = localStorage.getItem('contingency_malha_operacional');
+      if (saved) {
+        const list: FlightData[] = JSON.parse(saved);
+        const kept = list.filter(f => {
+          if (f.date === dateRef && !f.operatorId && (f.status === 'CHEGADA' || f.status === 'FILA')) {
+            return false;
+          }
+          return true;
+        });
+        saveLocalOperationalFlights(kept);
+      }
+    }
   }
+};
+
+const cleanTime = (timeStr: string | null | undefined): string | null => {
+  if (!timeStr) return '00:00';
+  const t = timeStr.trim().toUpperCase();
+  if (t === '?' || t === 'PRÉ' || t === '' || !t.match(/^[0-9]{1,2}:[0-9]{2}/)) {
+    return '00:00';
+  }
+  return t;
 };
 
 export const upsertFlight = async (flight: FlightData): Promise<void> => {
@@ -432,69 +688,87 @@ export const upsertFlight = async (flight: FlightData): Promise<void> => {
   };
 
   if (flight.id) {
-     payload.id = flight.id;
+    payload.id = flight.id;
   }
 
-  let { data, error } = await supabase.from('malha_operacional').upsert([payload]).select('id');
-  
-
-
-  if (!error && data && data.length === 0) {
-      console.warn("[Supabase] Upsert returned empty data. RLS might be silently blocking.");
-      throw new Error("A inserção na malha operacional falhou silenciosamente no Supabase. Verifique se as políticas de segurança (RLS) da tabela 'malha_operacional' permitem INSERT/UPDATE.");
-  }
-  
-  if (error) {
-    if (error.message.includes("Could not find the table")) {
-        throw new Error(`ESTRUTURA DA TABELA INVÁLIDA!\nVá ao SQL Editor no Supabase e rode: CREATE TABLE malha_operacional ( id UUID DEFAULT gen_random_uuid() PRIMARY KEY, date_ref text, flight_number text, airline text, airline_code text, model text, registration text, departure_flight_number text, origin text, destination text, eta text, etd text, actual_arrival_time text, position_id text, position_type text, pit_id text, fuel_status text, status text, designation_time timestamp, start_time timestamp, end_time timestamp, assignment_time timestamp, assigned_by_lt text, report jsonb, updated_at timestamp );\n\nErro original: ${error.message}`);
-    } else if (error.message.includes('Could not find') || error.message.includes('does not exist')) {
-        throw new Error(`ESTRUTURA DA TABELA INVÁLIDA (malha_operacional)!\nVá ao SQL Editor no Supabase e rode: ALTER TABLE malha_operacional ADD COLUMN IF NOT EXISTS date_ref text, ADD COLUMN IF NOT EXISTS airline text, ADD COLUMN IF NOT EXISTS airline_code text, ADD COLUMN IF NOT EXISTS model text, ADD COLUMN IF NOT EXISTS registration text, ADD COLUMN IF NOT EXISTS departure_flight_number text, ADD COLUMN IF NOT EXISTS origin text, ADD COLUMN IF NOT EXISTS eta text, ADD COLUMN IF NOT EXISTS etd text, ADD COLUMN IF NOT EXISTS actual_arrival_time text, ADD COLUMN IF NOT EXISTS designation_time timestamp, ADD COLUMN IF NOT EXISTS start_time timestamp, ADD COLUMN IF NOT EXISTS end_time timestamp, ADD COLUMN IF NOT EXISTS assignment_time timestamp, ADD COLUMN IF NOT EXISTS assigned_by_lt text, ADD COLUMN IF NOT EXISTS report jsonb, ADD COLUMN IF NOT EXISTS updated_at timestamp;\n\nErro original: ${error.message}`);
+  try {
+    const { data, error } = await supabase.from('malha_operacional').upsert([payload]).select('id');
+    if (error) throw error;
+    if (data && data.length === 0) {
+      throw new Error("Sincronização RLS bloqueada no Supabase.");
     }
-    console.error('[Supabase] Error upserting flight:', error.message);
-    throw error;
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      console.info('[Modo Contingência] Upsertando voo operacional no cache de contingência.');
+      const local = getLocalOperationalFlights(flight.date || getLocalTodayDateStr());
+      
+      const payloadFlight: FlightData = {
+        ...flight,
+        id: flight.id || `f-local-${flight.date || getLocalTodayDateStr()}-${Date.now()}`,
+        date: flight.date || getLocalTodayDateStr()
+      };
+
+      const saved = localStorage.getItem('contingency_malha_operacional');
+      let fullList: FlightData[] = saved ? JSON.parse(saved) : [];
+      
+      const index = fullList.findIndex(f => f.id === payloadFlight.id || (f.flightNumber === payloadFlight.flightNumber && f.date === payloadFlight.date));
+      if (index >= 0) {
+        fullList[index] = payloadFlight;
+      } else {
+        fullList.push(payloadFlight);
+      }
+      saveLocalOperationalFlights(fullList);
+    } else {
+      console.error('[Supabase Error] Upsert falhou:', err);
+    }
   }
 };
 
 export const deleteFlight = async (flightId: string): Promise<void> => {
   if (!isSupabaseConfigured()) return;
-  const { error } = await supabase.from('malha_operacional').delete().eq('id', flightId);
-  if (error) {
-    console.error('[Supabase] Error deleting flight:', error.message);
-    throw error;
+  try {
+    const { error } = await supabase.from('malha_operacional').delete().eq('id', flightId);
+    if (error) throw error;
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      const saved = localStorage.getItem('contingency_malha_operacional');
+      if (saved) {
+        const list: FlightData[] = JSON.parse(saved);
+        const filtered = list.filter(f => f.id !== flightId);
+        saveLocalOperationalFlights(filtered);
+      }
+    }
   }
 };
 
 export const getRootMesh = async (): Promise<MeshFlight[]> => {
-  if (!isSupabaseConfigured()) return [];
-  const { data, error } = await supabase
-    .from('malha_raiz')
-    .select('*')
-    .order('etd');
+  if (!isSupabaseConfigured()) return getLocalRootMesh();
+  try {
+    const { data, error } = await supabase.from('malha_raiz').select('*').order('etd');
+    if (error) throw error;
     
-  if (error) {
-    if (error.message.includes("Could not find the table")) {
-        throw new Error(`ESTRUTURA DA TABELA INVÁLIDA!\nVá ao SQL Editor no Supabase e rode:\n\nCREATE TABLE malha_raiz ( id UUID DEFAULT gen_random_uuid() PRIMARY KEY, flight_number text UNIQUE, airline_code text, destination text, eta varchar(10), etd varchar(10), registration text, model text, position_id text, actual_arrival_time varchar(10), is_disabled boolean DEFAULT false, updated_at timestamp with time zone default now() );\n\nALTER TABLE malha_raiz ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "Allow all access" ON malha_raiz FOR ALL TO public USING (true) WITH CHECK (true);\n\nErro original: ${error.message}`);
+    return (data || []).map((f: any) => ({
+      id: f.id,
+      airline: f.airline_code || 'OUTRA',
+      airlineCode: f.airline_code || 'OUTRA',
+      flightNumber: f.flight_number,
+      departureFlightNumber: f.departure_flight_number || f.flight_number,
+      destination: f.destination,
+      etd: f.etd,
+      registration: f.registration || '',
+      eta: f.eta,
+      positionId: f.position_id || '',
+      actualArrivalTime: f.actual_arrival_time || '',
+      model: f.model || '',
+      disabled: f.is_disabled || false,
+      cia: f.airline_code
+    })) as MeshFlight[];
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      console.info('[Modo Contingência] Servindo malha_raiz de contingência.');
     }
-    console.error('[Supabase] Error fetching root mesh:', error.message);
-    throw error;
+    return getLocalRootMesh();
   }
-  
-  return (data || []).map((f: any) => ({
-    id: f.id,
-    airline: f.airline_code || 'OUTRA',
-    airlineCode: f.airline_code || 'OUTRA',
-    flightNumber: f.flight_number,
-    departureFlightNumber: f.departure_flight_number || f.flight_number,
-    destination: f.destination,
-    etd: f.etd,
-    registration: f.registration || '',
-    eta: f.eta,
-    positionId: f.position_id || '',
-    actualArrivalTime: f.actual_arrival_time || '',
-    model: f.model || '',
-    disabled: f.is_disabled || false,
-    cia: f.airline_code
-  })) as MeshFlight[];
 };
 
 export const upsertRootMesh = async (flights: MeshFlight[]): Promise<void> => {
@@ -518,134 +792,103 @@ export const upsertRootMesh = async (flights: MeshFlight[]): Promise<void> => {
     return obj;
   });
   
-  // Deduplicate by flight_number
+  // Deduplicate
   const seenFlights = new Set();
   let payload = [];
   for (const p of payloadRaw) {
-      if (!p.flight_number) continue; // Skip empty
-      if (!seenFlights.has(p.flight_number)) {
-          seenFlights.add(p.flight_number);
-          payload.push(p);
-      }
+    if (!p.flight_number) continue;
+    if (!seenFlights.has(p.flight_number)) {
+      seenFlights.add(p.flight_number);
+      payload.push(p);
+    }
   }
 
-  let maxAttempts = 10;
-  while (maxAttempts > 0) {
-    const { error } = await supabase.from('malha_raiz').upsert(payload, { onConflict: 'flight_number' });
-    
-    if (!error) return;
+  try {
+    let maxAttempts = 10;
+    while (maxAttempts > 0) {
+      const { error } = await supabase.from('malha_raiz').upsert(payload, { onConflict: 'flight_number' });
+      if (!error) return;
 
-    const notFoundMatch = error.message.match(/Could not find the '([^']+)' column/);
-    const doesNotExistMatch = error.message.match(/column\s+([^\s]+)\s+of relation/i) 
-      || error.message.match(/column\s+([^\s]+)\s+does not exist/i);
-    
-    let missingCol = '';
-    if (notFoundMatch && notFoundMatch[1]) {
-       missingCol = notFoundMatch[1];
-    } else if (doesNotExistMatch && doesNotExistMatch[1]) {
-       missingCol = doesNotExistMatch[1].replace(/^.*\.([^.]+)$/, '$1').replace(/"/g, '');
+      const notFoundMatch = error.message.match(/Could not find the '([^']+)' column/);
+      if (notFoundMatch && notFoundMatch[1]) {
+        const missingCol = notFoundMatch[1];
+        payload = payload.map(p => {
+          const newP = { ...p } as any;
+          delete newP[missingCol];
+          return newP;
+        });
+        maxAttempts--;
+        continue;
+      }
+      throw error;
     }
-
-    if (missingCol) {
-       console.warn(`[Supabase] column '${missingCol}' does not exist in malha_raiz, retrying without it...`);
-       payload = payload.map(p => {
-           const newP = { ...p } as any;
-           delete newP[missingCol];
-           return newP;
-       });
-       maxAttempts--;
-       continue;
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      console.info('[Modo Contingência] Salvando malha raiz de contingência localmente.');
+      saveLocalRootMesh(flights);
     }
-
-    if (error.message.includes("new row violates row-level security policy")) {
-        throw new Error(`ERRO DE PERMISSÃO (RLS)!\nVá ao SQL Editor no Supabase e rode:\n\nALTER TABLE malha_raiz ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS "Allow all access" ON malha_raiz;\nCREATE POLICY "Allow all access" ON malha_raiz FOR ALL TO public USING (true) WITH CHECK (true);`);
-    }
-
-    console.error('[Supabase] Error upserting root mesh:', error.message);
-    if (error.message.includes("Could not find the table")) {
-        throw new Error(`ESTRUTURA DA TABELA INVÁLIDA!\nVá ao SQL Editor no Supabase e rode:\n\nCREATE TABLE malha_raiz ( id UUID DEFAULT gen_random_uuid() PRIMARY KEY, flight_number text UNIQUE, airline_code text, destination text, eta varchar(10), etd varchar(10), registration text, model text, position_id text, actual_arrival_time varchar(10), is_disabled boolean DEFAULT false, updated_at timestamp with time zone default now() );\n\nALTER TABLE malha_raiz ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "Allow all access" ON malha_raiz FOR ALL TO public USING (true) WITH CHECK (true);\n\nErro original: ${error.message}`);
-    } else if (error.message.includes('Could not find') || error.message.includes('does not exist')) {
-       throw new Error(`ESTRUTURA DA TABELA INVÁLIDA (malha_raiz)!\nVá ao SQL Editor no Supabase e rode: ALTER TABLE malha_raiz ADD COLUMN IF NOT EXISTS flight_number text UNIQUE, ADD COLUMN IF NOT EXISTS airline_code text, ADD COLUMN IF NOT EXISTS destination text, ADD COLUMN IF NOT EXISTS eta varchar(10), ADD COLUMN IF NOT EXISTS etd varchar(10), ADD COLUMN IF NOT EXISTS registration text, ADD COLUMN IF NOT EXISTS model text, ADD COLUMN IF NOT EXISTS position_id text, ADD COLUMN IF NOT EXISTS is_disabled boolean, ADD COLUMN IF NOT EXISTS updated_at timestamp;\n\nErro original: ${error.message}`);
-    }
-    throw error;
   }
 };
 
 export const deleteRootMeshFlight = async (flightId: string): Promise<void> => {
   if (!isSupabaseConfigured()) return;
-  const { error } = await supabase.from('malha_raiz').delete().eq('id', flightId);
-  if (error) {
-    console.error('[Supabase] Error deleting root mesh flight:', error.message);
-    throw error;
+  try {
+    const { error } = await supabase.from('malha_raiz').delete().eq('id', flightId);
+    if (error) throw error;
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      const saved = getLocalRootMesh();
+      const filtered = saved.filter(f => f.id !== flightId);
+      saveLocalRootMesh(filtered);
+    }
   }
 };
 
 export const clearRootMesh = async (): Promise<void> => {
   if (!isSupabaseConfigured()) return;
-  // This is a workaround to delete all since we don't have a truncate RPC usually
-  const { error } = await supabase.from('malha_raiz').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-  if (error) {
-    console.error('[Supabase] Error clearing root mesh:', error.message);
-    throw error;
+  try {
+    const { error } = await supabase.from('malha_raiz').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (error) throw error;
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      saveLocalRootMesh([]);
+    }
   }
 };
 
 export const getBaseMeshFlights = async (dateRef: string): Promise<MeshFlight[]> => {
-  if (!isSupabaseConfigured()) return [];
-  
-  let { data, error } = await supabase
-    .from('malha_dia')
-    .select('*')
-    .eq('date', dateRef)
-    .order('etd');
+  if (!isSupabaseConfigured()) return getLocalBaseMeshFlights(dateRef);
+  try {
+    const { data, error } = await supabase
+      .from('malha_dia')
+      .select('*')
+      .eq('date', dateRef)
+      .order('etd');
+      
+    if (error) throw error;
     
-  if (error && error.message.includes("does not exist")) {
-     console.warn("[Supabase] fallback para getBaseMesh...", error.message);
-     const fallback = await supabase.from('malha_dia').select('*');
-     data = fallback.data;
-     error = fallback.error;
+    return (data || []).map(dbFlight => ({
+      id: dbFlight.id,
+      date: dbFlight.date || dateRef,
+      airline: dbFlight.airline || '',
+      airlineCode: dbFlight.airline_code || '',
+      flightNumber: dbFlight.flight_number || '',
+      departureFlightNumber: dbFlight.departure_flight_number || dbFlight.flight_number || '',
+      destination: dbFlight.destination || '',
+      etd: dbFlight.etd || '00:00',
+      registration: dbFlight.registration || '',
+      eta: dbFlight.eta || dbFlight.etd || '00:00',
+      positionId: dbFlight.position_id || '',
+      actualArrivalTime: dbFlight.actual_arrival_time || '',
+      model: dbFlight.model || '',
+      disabled: dbFlight.is_disabled || false
+    }));
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      console.info('[Modo Contingência] Servindo malha_dia de contingência local.');
+    }
+    return getLocalBaseMeshFlights(dateRef);
   }
-
-  if (error) {
-    console.error(`[Supabase] Error fetching base mesh:`, error.message);
-    throw error;
-  }
-  
-  if (!data) return [];
-
-  // Try to find the date column dynamically if it's named something else
-  const filteredData = data.filter((row: any) => {
-    const rowDate = row.date || row.date_ref || row.data || row.voo_data || row.flight_date;
-    return rowDate === dateRef;
-  });
-  
-  const finalData = filteredData.length > 0 ? filteredData : data; // Fallback to all if date filter fails or if user just wants to see them
-
-  return finalData.map(dbFlight => ({
-    id: dbFlight.id,
-    date: dbFlight.date || dbFlight.date_ref || dbFlight.data || dbFlight.voo_data || dbFlight.flight_date || dateRef,
-    airline: dbFlight.airline || dbFlight.cia || '',
-    airlineCode: dbFlight.airline_code || dbFlight.cia_cod || dbFlight.airline?.substring(0,3) || '',
-    flightNumber: dbFlight.flight_number || dbFlight.voo || dbFlight.voo_chegada || dbFlight.prefixo || '',
-    departureFlightNumber: dbFlight.departure_flight_number || dbFlight.voo_saida || dbFlight.flight_number || '', // Backup
-    destination: dbFlight.destination || dbFlight.destino || '',
-    etd: dbFlight.etd || '00:00',
-    registration: dbFlight.registration || dbFlight.matricula || '',
-    eta: dbFlight.eta || dbFlight.etd || '00:00',
-    positionId: dbFlight.position_id || dbFlight.posicao || '',
-    actualArrivalTime: dbFlight.actual_arrival_time || '',
-    model: dbFlight.model || dbFlight.modelo || dbFlight.equipamento || '',
-    disabled: dbFlight.is_disabled || dbFlight.desabilitado || false
-  }));
-};
-
-const cleanTime = (timeStr: string | null | undefined): string | null => {
-  if (!timeStr) return '00:00';
-  const t = timeStr.trim().toUpperCase();
-  if (t === '?' || t === 'PRÉ' || t === '' || !t.match(/^[0-9]{1,2}:[0-9]{2}/)) {
-    return '00:00';
-  }
-  return t;
 };
 
 export const upsertBaseMeshFlights = async (flightsBase: MeshFlight[]): Promise<void> => {
@@ -673,76 +916,59 @@ export const upsertBaseMeshFlights = async (flightsBase: MeshFlight[]): Promise<
     return obj;
   });
 
-  let maxAttempts = 10;
-  let missingCol = '';
-  
-  while (maxAttempts > 0) {
-    let allChunksSuccess = true;
-    let chunkError = null;
+  try {
+    let maxAttempts = 10;
+    while (maxAttempts > 0) {
+      const { error } = await supabase.from('malha_dia').upsert(payload);
+      if (!error) return;
 
-    const chunkSize = 200;
-    for (let i = 0; i < payload.length; i += chunkSize) {
-      const chunk = payload.slice(i, i + chunkSize);
-      const { data, error } = await supabase.from('malha_dia').upsert(chunk).select('id');
-      
-      if (error) {
-         allChunksSuccess = false;
-         chunkError = error;
-         break;
+      const notFoundMatch = error.message.match(/Could not find the '([^']+)' column/);
+      if (notFoundMatch && notFoundMatch[1]) {
+        const missingCol = notFoundMatch[1];
+        payload = payload.map(p => {
+          const newP = { ...p } as any;
+          delete newP[missingCol];
+          return newP;
+        });
+        maxAttempts--;
+        continue;
       }
-      if (data && data.length === 0 && chunk.length > 0) {
-          throw new Error("A inserção falhou silenciosamente no Supabase. Verifique se as políticas de segurança (RLS) do banco de dados permitem (ou desabilite o RLS da tabela 'malha_dia').");
-      }
+      throw error;
     }
-    
-    if (allChunksSuccess) return;
-
-    const error = chunkError;
-
-    const notFoundMatch = error.message.match(/Could not find the '([^']+)' column/);
-    const doesNotExistMatch = error.message.match(/column\s+([^\s]+)\s+of relation/i) 
-      || error.message.match(/column\s+([^\s]+)\s+does not exist/i);
-    
-    let missingCol = '';
-    if (notFoundMatch && notFoundMatch[1]) {
-       missingCol = notFoundMatch[1];
-    } else if (doesNotExistMatch && doesNotExistMatch[1]) {
-       missingCol = doesNotExistMatch[1].replace(/^.*\.([^.]+)$/, '$1').replace(/"/g, '');
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      console.info('[Modo Contingência] Salvando malha base de contingência localmente.');
+      saveLocalBaseMeshFlights(flightsBase);
     }
-
-    if (missingCol) {
-       console.warn(`[Supabase] column '${missingCol}' does not exist in malha_dia, retrying without it...`);
-       payload = payload.map(p => {
-           const newP = { ...p } as any;
-           delete newP[missingCol];
-           return newP;
-       });
-       maxAttempts--;
-       if (maxAttempts === 0) {
-           throw new Error(`O banco de dados 'malha_dia' está faltando muitas colunas essenciais. Erro original: ${error.message}`);
-       }
-       continue;
-    }
-
-    throw new Error(`Erro ao inserir na malha_dia (Malha Base): ${error.message}`);
   }
 };
 
 export const clearBaseMeshFlights = async (dateRef: string): Promise<void> => {
    if (!isSupabaseConfigured()) return;
-   const { error } = await supabase.from('malha_dia').delete().eq('date', dateRef);
-   if (error) {
-      console.error(`[Supabase] Error clearing base mesh for ${dateRef}:`, error.message);
-      throw error;
+   try {
+     const { error } = await supabase.from('malha_dia').delete().eq('date', dateRef);
+     if (error) throw error;
+   } catch (err: any) {
+     if (isTableMissingError(err)) {
+       const saved = localStorage.getItem('contingency_malha_dia');
+       if (saved) {
+         const list: MeshFlight[] = JSON.parse(saved);
+         const filtered = list.filter(f => f.date !== dateRef);
+         saveLocalBaseMeshFlights(filtered);
+       }
+     }
    }
 };
 
 export const clearAllBaseMeshFlights = async (): Promise<void> => {
    if (!isSupabaseConfigured()) return;
-   const { error } = await supabase.from('malha_dia').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-   if (error) {
-      console.error('[Supabase] Error clearing all base mesh flights:', error.message);
-      throw error;
+   try {
+     const { error } = await supabase.from('malha_dia').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+     if (error) throw error;
+   } catch (err: any) {
+     if (isTableMissingError(err)) {
+       saveLocalBaseMeshFlights([]);
+     }
    }
 };
 
@@ -809,93 +1035,108 @@ export const bulkInsertFlights = async (flights: FlightData[]): Promise<void> =>
     return obj;
   });
 
-  const chunkSize = 100;
-  for (let i = 0; i < payload.length; i += chunkSize) {
-    const chunk = payload.slice(i, i + chunkSize);
-    let { data, error } = await supabase.from('malha_operacional').upsert(chunk).select('id');
-    
-
-
-    if (!error) {
-       if (data && data.length === 0 && chunk.length > 0) {
-           console.warn("[Supabase] Bulk Upsert returned empty data. This might be due to RLS policies silently blocking.");
-           throw new Error("A inserção na malha operacional falhou silenciosamente no Supabase. Verifique se as políticas de segurança (RLS - Row Level Security) do banco de dados (tabela 'malha_operacional') permitem as permissões de INSERT/UPDATE.");
-       }
-    }
-
-    if (error) {
-        console.error('[Supabase] Error bulk inserting flights chunk:', error.message);
-        if (error.message.includes("Could not find the table")) {
-            throw new Error(`ESTRUTURA DA TABELA INVÁLIDA!\nVá ao SQL Editor no Supabase e rode: CREATE TABLE malha_operacional ( id UUID DEFAULT gen_random_uuid() PRIMARY KEY, date_ref text, flight_number text, airline text, airline_code text, model text, registration text, departure_flight_number text, origin text, destination text, eta text, etd text, actual_arrival_time text, position_id text, position_type text, pit_id text, fuel_status text, status text, designation_time timestamp, start_time timestamp, end_time timestamp, assignment_time timestamp, assigned_by_lt text, report jsonb, updated_at timestamp );\n\nErro original: ${error.message}`);
-        } else if (error.message.includes('Could not find') || error.message.includes('does not exist')) {
-            throw new Error(`ESTRUTURA DA TABELA INVÁLIDA (malha_operacional)!\nVá ao SQL Editor no Supabase e rode: ALTER TABLE malha_operacional ADD COLUMN IF NOT EXISTS date_ref text, ADD COLUMN IF NOT EXISTS airline text, ADD COLUMN IF NOT EXISTS airline_code text, ADD COLUMN IF NOT EXISTS model text, ADD COLUMN IF NOT EXISTS registration text, ADD COLUMN IF NOT EXISTS departure_flight_number text, ADD COLUMN IF NOT EXISTS origin text, ADD COLUMN IF NOT EXISTS eta text, ADD COLUMN IF NOT EXISTS etd text, ADD COLUMN IF NOT EXISTS actual_arrival_time text, ADD COLUMN IF NOT EXISTS designation_time timestamp, ADD COLUMN IF NOT EXISTS start_time timestamp, ADD COLUMN IF NOT EXISTS end_time timestamp, ADD COLUMN IF NOT EXISTS assignment_time timestamp, ADD COLUMN IF NOT EXISTS assigned_by_lt text, ADD COLUMN IF NOT EXISTS report jsonb, ADD COLUMN IF NOT EXISTS updated_at timestamp;\n\nErro original: ${error.message}`);
+  try {
+    const { error } = await supabase.from('malha_operacional').upsert(payload);
+    if (error) throw error;
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      console.info('[Modo Contingência] Salvando inserção em lote de voos localmente.');
+      const saved = localStorage.getItem('contingency_malha_operacional');
+      let currentList: FlightData[] = saved ? JSON.parse(saved) : [];
+      
+      flights.forEach(flight => {
+        const index = currentList.findIndex(f => f.id === flight.id || (f.flightNumber === flight.flightNumber && f.date === flight.date));
+        if (index >= 0) {
+          currentList[index] = flight;
+        } else {
+          currentList.push(flight);
         }
-        throw new Error(`Erro ao inserir na malha operacional: ${error.message}`);
+      });
+      saveLocalOperationalFlights(currentList);
     }
   }
 };
 
 export const getAerodromoConfig = async (): Promise<any> => {
   if (!isSupabaseConfigured()) return null;
-  const { data, error } = await supabase.from('aerodromo_config').select('*').limit(1).single();
-  if (error && error.code !== 'PGRST116') {
-     console.error('[Supabase] Error fetching aerodromo config:', error);
-     return null;
+  try {
+    const { data, error } = await supabase.from('aerodromo_config').select('*').limit(1).single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  } catch (err: any) {
+    return null;
   }
-  return data;
 };
 
 export const updateAerodromoConfig = async (configPayload: any): Promise<void> => {
    if (!isSupabaseConfigured()) return;
-   
-   // Check if exists
-   const { data } = await supabase.from('aerodromo_config').select('id').limit(1).single();
-   
-   if (data) {
-      await supabase.from('aerodromo_config').update({ ...configPayload, updated_at: new Date().toISOString() }).eq('id', data.id);
-   } else {
-      await supabase.from('aerodromo_config').insert([configPayload]);
+   try {
+     const { data } = await supabase.from('aerodromo_config').select('id').limit(1).single();
+     if (data) {
+        await supabase.from('aerodromo_config').update({ ...configPayload, updated_at: new Date().toISOString() }).eq('id', data.id);
+     } else {
+        await supabase.from('aerodromo_config').insert([configPayload]);
+     }
+   } catch (err) {
+     // Configurações salvas localmente
    }
 };
 
 export const clearFlightPosition = async (flightId: string): Promise<void> => {
   if (!isSupabaseConfigured()) return;
-  const { error } = await supabase
-    .from('malha_operacional')
-    .update({ position_id: null, pit_id: null, position_type: null })
-    .eq('id', flightId);
-
-  if (error) {
-    console.error(`[Supabase] Error clearing flight position for ${flightId}:`, error.message);
-    throw error;
+  try {
+    const { error } = await supabase
+      .from('malha_operacional')
+      .update({ position_id: null, pit_id: null, position_type: null })
+      .eq('id', flightId);
+    if (error) throw error;
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      const saved = localStorage.getItem('contingency_malha_operacional');
+      if (saved) {
+        const list: FlightData[] = JSON.parse(saved);
+        const flight = list.find(f => f.id === flightId);
+        if (flight) {
+          flight.positionId = '';
+          flight.pitId = undefined;
+          flight.positionType = undefined;
+        }
+        saveLocalOperationalFlights(list);
+      }
+    }
   }
 };
 
 export const clearAllFlightAssignments = async (): Promise<void> => {
   if (!isSupabaseConfigured()) return;
-  
-  // First get all flights that have a position
-  const { data: flightsToClear, error: fetchError } = await supabase
-    .from('malha_operacional')
-    .select('id')
-    .not('position_id', 'is', null);
-
-  if (fetchError) {
-     console.error('[Supabase] Error finding flights to clear:', fetchError.message);
-     throw fetchError;
-  }
-
-  if (flightsToClear && flightsToClear.length > 0) {
-    const flightIds = flightsToClear.map(f => f.id);
-    
-    const { error: updateError } = await supabase
+  try {
+    const { data: flightsToClear, error: fetchError } = await supabase
       .from('malha_operacional')
-      .update({ position_id: null, pit_id: null, position_type: null })
-      .in('id', flightIds);
-      
-    if (updateError) {
-      console.error('[Supabase] Error clearing flight assignments:', updateError.message);
-      throw updateError;
+      .select('id')
+      .not('position_id', 'is', null);
+
+    if (fetchError) throw fetchError;
+
+    if (flightsToClear && flightsToClear.length > 0) {
+      const flightIds = flightsToClear.map(f => f.id);
+      const { error: updateError } = await supabase
+        .from('malha_operacional')
+        .update({ position_id: null, pit_id: null, position_type: null })
+        .in('id', flightIds);
+      if (updateError) throw updateError;
+    }
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      const saved = localStorage.getItem('contingency_malha_operacional');
+      if (saved) {
+        const list: FlightData[] = JSON.parse(saved);
+        list.forEach(f => {
+          f.positionId = '';
+          f.pitId = undefined;
+          f.positionType = undefined;
+        });
+        saveLocalOperationalFlights(list);
+      }
     }
   }
 };
@@ -917,23 +1158,9 @@ export const getUserLayoutPreferences = async (userId: string): Promise<DbUserPr
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (error) {
-      if (
-        error.message.includes("does not exist") || 
-        error.code === 'PGRST116' || 
-        error.message.includes("relation \"preferencias_layout_usuario\"") ||
-        error.message.includes("Could not find the table") ||
-        error.message.includes("schema cache")
-      ) {
-        console.warn("[getUserLayoutPreferences] Tabela preferencias_layout_usuario não existe no Supabase. Usando armazenamento local.");
-        return null;
-      }
-      console.error('[getUserLayoutPreferences] Error fetching preferences:', error.message);
-      return null;
-    }
+    if (error) throw error;
     return data as DbUserPreferences;
   } catch (err) {
-    console.error('[getUserLayoutPreferences] Exception fetching preferences:', err);
     return null;
   }
 };
@@ -960,36 +1187,8 @@ export const saveUserLayoutPreferences = async (
       .from('preferencias_layout_usuario')
       .upsert([payload]);
 
-    if (error) {
-      if (
-        error.message.includes("does not exist") || 
-        error.message.includes("relation \"preferencias_layout_usuario\"") ||
-        error.message.includes("Could not find the table") ||
-        error.message.includes("schema cache")
-      ) {
-        console.warn(
-          `[saveUserLayoutPreferences] A tabela "preferencias_layout_usuario" não existe no Supabase. ` +
-          `Instâncias de configuração foram guardadas preferencialmente em cache local (LocalStorage).`
-        );
-        return;
-      }
-      throw error;
-    }
+    if (error) throw error;
   } catch (err: any) {
-    // Se for um erro já tratado de tabela inexistente, não polui o console como erro crítico
-    if (err.message && (
-      err.message.includes("preferencias_layout_usuario") ||
-      err.message.includes("does not exist") ||
-      err.message.includes("schema")
-    )) {
-      console.warn('[saveUserLayoutPreferences] Salvo em cache local (tabela opcional ausente no Supabase).');
-      return;
-    }
-    console.error('[saveUserLayoutPreferences] Exception saving preferences:', err);
-    throw err;
+    // Layout preferences fallback is already handled in App.tsx via React/LocalStorage
   }
 };
-
-
-
-

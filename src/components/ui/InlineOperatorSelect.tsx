@@ -19,7 +19,7 @@ export const InlineOperatorSelect: React.FC<InlineOperatorSelectProps> = ({
   isDarkMode
 }) => {
   const ref = useRef<HTMLDivElement>(null);
-  useOnClickOutside(ref, onClose);
+  useOnClickOutside(ref as any, onClose);
 
   return (
     <div 

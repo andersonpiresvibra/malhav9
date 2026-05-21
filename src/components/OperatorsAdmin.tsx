@@ -594,8 +594,8 @@ export const OperatorsAdmin: React.FC<OperatorsAdminProps> = ({ isDarkMode, glob
     }).sort((a, b) => {
       const isAsc = sortConfig.direction === 'asc';
       const key = sortConfig.key === 'actions' ? 'warName' : sortConfig.key;
-      const valA = String(a[key] || '');
-      const valB = String(b[key] || '');
+      const valA = String((a as any)[key] || '');
+      const valB = String((b as any)[key] || '');
       
       if (valA === valB) return 0;
       const comparison = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
@@ -1322,7 +1322,7 @@ export const OperatorsAdmin: React.FC<OperatorsAdminProps> = ({ isDarkMode, glob
 
             try {
               await updateOperatorWorkDays(currentId, days);
-              setOperators(prev => prev.map(o => o.id === currentId ? { ...o, workDays: days } : o));
+              setOperators(prev => prev.map(o => o.id === currentId ? { ...o, workDays: days as any } : o));
               setSchedulingOperator(null);
             } catch (err: any) {
               console.error('Erro detalhado ao salvar escala:', err);

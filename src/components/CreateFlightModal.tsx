@@ -487,7 +487,10 @@ export const CreateFlightModal: React.FC<CreateFlightModalProps> = ({ onClose, o
                 handleCreate(dList); // Amanhã
                 setTimeConflict(null);
             }}
-            onCancel={() => {
+            onCorrect={() => {
+                setTimeConflict(null);
+            }}
+            onDiscard={() => {
                 setTimeConflict(null);
             }}
         />

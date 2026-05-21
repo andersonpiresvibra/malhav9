@@ -225,6 +225,10 @@ export interface MeshFlight {
   disabled?: boolean;
   isNew?: boolean;
   date?: string; // Add date field for time overrides
+  positionType?: string;
+  operator?: string;
+  supportOperator?: string;
+  fleet?: string;
 }
 
 export type ViewState = 'GRID_OPS' | 'SHIFT_OPERATORS' | 'OPERATIONAL_MESH' | 'REPORTS' | 'FLEET' | 'ROOT_MESH' | 'OPERATORS_ADMIN' | 'MANAGEMENT' | 'FLEETS_ADMIN' | 'AIRCRAFTS_ADMIN' | 'AERODROMO' | 'AERODROMO_ADMIN' | 'MALHA_RAIZ_ADMIN' | 'AIRLINES_ADMIN';
@@ -259,6 +263,9 @@ export interface StaticFlight {
   flightNumber: string;
   destination: string;
   city: string;
+  departureFlightNumber?: string;
+  airlineCode?: string;
+  companhia?: string;
 }
 
 export type DetailedVehicleStatus = 'OPERACIONAL' | 'EM MANUTENÇÃO' | 'INATIVO';

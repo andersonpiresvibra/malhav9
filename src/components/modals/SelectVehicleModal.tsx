@@ -294,7 +294,9 @@ export const SelectVehicleModal: React.FC<SelectVehicleModalProps> = ({
                                                         {v.displayName}
                                                     </span>
                                                     {otherOpsCount > 0 && !isSelected && (
-                                                        <Lock size={12} className={isDarkMode ? 'text-slate-600 group-hover:text-amber-500/70' : 'text-slate-400 group-hover:text-amber-500/70'} title="Ocupado por outro operador" />
+                                                        <span title="Ocupado por outro operador">
+                                                            <Lock size={12} className={isDarkMode ? 'text-slate-600 group-hover:text-amber-500/70' : 'text-slate-400 group-hover:text-amber-500/70'} />
+                                                        </span>
                                                     )}
                                                 </div>
                                                 {isSelected && (
@@ -305,7 +307,7 @@ export const SelectVehicleModal: React.FC<SelectVehicleModalProps> = ({
                                                 <span className={`text-[9px] font-bold uppercase tracking-widest ${isSelected ? 'text-blue-400' : isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
                                                     {v.type}
                                                 </span>
-                                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${v.status === 'DISPONÍVEL' || v.status === 'ATIVO' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-500/10 text-slate-500'}`}>
+                                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${v.status === 'DISPONÍVEL' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-500/10 text-slate-500'}`}>
                                                     {v.status}
                                                 </span>
                                             </div>

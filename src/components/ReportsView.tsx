@@ -735,7 +735,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ flights, initialFlight
                                         auditLogs.map((log, idx) => (
                                             <tr key={idx} className={`h-12 border-b ${isDarkMode ? 'border-slate-800/30 hover:bg-slate-900' : 'border-slate-200/50 hover:bg-slate-50'} transition-colors`}>
                                                 <td className={`px-4 border-r ${isDarkMode ? 'border-slate-800/50 text-slate-400' : 'border-slate-200/50 text-slate-600'} font-mono`}>
-                                                    {log.created_at ? new Date(log.created_at).toLocaleString() : '--'}
+                                                    {(log as any).created_at ? new Date((log as any).created_at).toLocaleString() : '--'}
                                                 </td>
                                                 <td className={`px-4 border-r ${isDarkMode ? 'border-slate-800/50' : 'border-slate-200/50'}`}>
                                                     <span className={`px-2 py-1 rounded text-[9px] uppercase ${isDarkMode ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}>
