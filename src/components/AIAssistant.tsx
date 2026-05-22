@@ -105,29 +105,41 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ isDarkMode = true }) =
         {isOpen && (
           <motion.div
             id="ai-assistant-chat-panel"
-            initial={{ opacity: 0, y: 30, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 30, scale: 0.95 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
-            className={`fixed bottom-24 right-6 z-[9995] w-[420px] max-w-[calc(100vw-48px)] h-[580px] rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col overflow-hidden border ${bgColor} ${borderColor}`}
+            initial={{ opacity: 0, x: '100%' }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: '100%' }}
+            transition={{ type: 'spring', damping: 28, stiffness: 250 }}
+            className={`fixed top-0 right-0 bottom-0 h-screen z-[9995] w-[420px] max-w-full shadow-[-10px_0_50px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden border-l ${bgColor} ${borderColor} rounded-none`}
           >
             {/* Header */}
-            <div className={`${headerBg} px-4 py-4 flex items-center gap-3 shrink-0 shadow-md`}>
-              <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
-                <Brain size={18} className="text-white animate-pulse" />
-              </div>
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-white">Copiloto Operacional</h3>
-                <p className="text-[10px] text-white/80">
-                  {configured ? '● Inteligência Artificial Conectada' : '○ Chave de API Não Configurada'}
-                </p>
-              </div>
-              {isLoading && lastTool && (
-                <div className="ml-auto flex items-center gap-1.5 bg-slate-900/40 px-2 py-0.5 rounded-full border border-white/10">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  <span className="text-[9px] text-white/90 font-mono tracking-tight">{lastTool}</span>
+            <div className={`${headerBg} px-4 py-4 flex items-center justify-between shrink-0 shadow-md`}>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                  <Brain size={18} className="text-white animate-pulse" />
                 </div>
-              )}
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-white">Copiloto Operacional</h3>
+                  <p className="text-[10px] text-white/80">
+                    {configured ? '● Inteligência Conectada' : '○ Chave Não Configurada'}
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                {isLoading && lastTool && (
+                  <div className="flex items-center gap-1.5 bg-slate-900/40 px-2 py-0.5 rounded-full border border-white/10">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="text-[9px] text-white/90 font-mono tracking-tight">{lastTool}</span>
+                  </div>
+                )}
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="p-1.5 rounded-lg hover:bg-white/15 text-white transition-all cursor-pointer"
+                  title="Fechar Copiloto"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {/* Content list of messages */}
